@@ -1,6 +1,10 @@
-"""Immutable domain models for corpus artifacts."""
+"""Immutable domain models for corpus and persisted index artifacts."""
+
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
+
+from rag_regress.embeddings import EmbeddingMetadata
 
 
 class Document(BaseModel):
@@ -36,3 +40,19 @@ class Chunk(BaseModel):
     text: str
     start_word: int
     end_word: int
+
+
+class IndexBundleManifest(BaseModel):
+    """Versioned metadata for one content-addressed FAISS bundle."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal[1] = 1
+    corpus_fingerprint: str
+    index_config_fingerprint: str
+    embedding: EmbeddingMetadata
+    dimension: int
+    chunk_count: int
+    chunk_ids: tuple[str, ...]
+    index_file: str
+    chunks_file: str
