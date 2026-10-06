@@ -1,7 +1,7 @@
 # RAG Regression Tool Design
 
 **Date:** 2026-10-06
-**Status:** Draft for user review
+**Status:** Approved
 **Working product name:** `rag-regress`
 
 ## 1. Summary
@@ -178,7 +178,7 @@ Modules expose typed domain operations. The CLI coordinates those operations but
 
 - schema version and tool version
 - corpus and dataset fingerprints
-- full resolved pipeline configuration
+- full retrieval-relevant pipeline configuration, excluding absolute corpus and storage paths
 - Python, platform, dependency, and embedding-model metadata
 - start time, duration, warnings, and errors
 - aggregate metrics
