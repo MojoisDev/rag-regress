@@ -22,3 +22,17 @@ class CorpusSnapshot(BaseModel):
 
     documents: tuple[Document, ...]
     fingerprint: str
+
+
+class Chunk(BaseModel):
+    """A deterministic word-range from a corpus document."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: str
+    document_id: str
+    document_path: str
+    sequence: int
+    text: str
+    start_word: int
+    end_word: int
