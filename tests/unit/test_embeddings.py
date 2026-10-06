@@ -77,6 +77,19 @@ def test_sentence_transformer_adapter_normalizes_model_output(
     np.testing.assert_allclose(np.linalg.norm(vectors, axis=1), np.ones(2))
 
 
+def _skip_if_model_not_cached(error: ExecutionError) -> None:
+    if "couldn't find them in the cached files" not in str(error):
+        raise error
+    pytest.skip("model is not cached locally", allow_module_level=False)
+
+
+def test_model_cache_skip_does_not_hide_other_execution_errors() -> None:
+    error = ExecutionError("Unable to load embedding model 'test': invalid embedding dimension")
+
+    with pytest.raises(ExecutionError, match="invalid embedding dimension"):
+        _skip_if_model_not_cached(error)
+
+
 @pytest.mark.model
 def test_sentence_transformer_embedder_smoke_uses_cached_model(
     monkeypatch: pytest.MonkeyPatch,
@@ -90,8 +103,8 @@ def test_sentence_transformer_embedder_smoke_uses_cached_model(
 
     try:
         embedder = build_embedder(config)
-    except ExecutionError:
-        pytest.skip("model is not cached locally", allow_module_level=False)
+    except ExecutionError as exc:
+        _skip_if_model_not_cached(exc)
 
     vector = embedder.embed_query("How can a user reset their password?")
 
