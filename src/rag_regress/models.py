@@ -47,7 +47,7 @@ class IndexBundleManifest(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[1]
     corpus_fingerprint: str
     index_config_fingerprint: str
     embedding: EmbeddingMetadata

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+import faiss
 import numpy as np
 import pytest
 
@@ -97,6 +99,49 @@ def test_existing_non_directory_bundle_target_is_invalid(tmp_path: Path) -> None
 
     with pytest.raises(ExecutionError, match=str(target)):
         build_index_bundle(config, corpus, chunks, DeterministicTestEmbedder())
+
+
+def test_bundle_manifest_requires_an_explicit_schema_version(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    corpus, chunks = _corpus_and_chunks("corpus-missing-schema")
+    build_index_bundle(config, corpus, chunks, DeterministicTestEmbedder())
+    target = bundle_path(config, corpus.fingerprint)
+    manifest_path = target / "manifest.json"
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    del payload["schema_version"]
+    manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ExecutionError, match=str(target)):
+        load_index_bundle(config, corpus.fingerprint)
+
+
+def test_dangling_bundle_symlink_is_rejected_without_overwriting(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    corpus, chunks = _corpus_and_chunks("corpus-dangling-link")
+    target = bundle_path(config, corpus.fingerprint)
+    target.parent.mkdir(parents=True)
+    target.symlink_to(tmp_path / "missing-bundle", target_is_directory=True)
+
+    with pytest.raises(ExecutionError, match=str(target)):
+        build_index_bundle(config, corpus, chunks, DeterministicTestEmbedder())
+
+    assert target.is_symlink()
+
+
+def test_bundle_rejects_persisted_non_unit_faiss_vectors(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    corpus, chunks = _corpus_and_chunks("corpus-corrupt-vectors")
+    build_index_bundle(config, corpus, chunks, DeterministicTestEmbedder())
+    target = bundle_path(config, corpus.fingerprint)
+    raw = faiss.read_index(str(target / "index.faiss"))
+    vectors = raw.reconstruct_n(0, raw.ntotal)
+    vectors[0] *= 2.0
+    corrupt = faiss.IndexFlatIP(raw.d)
+    corrupt.add(vectors)
+    faiss.write_index(corrupt, str(target / "index.faiss"))
+
+    with pytest.raises(ExecutionError, match="unit-normalized"):
+        load_index_bundle(config, corpus.fingerprint)
 
 
 def _config(tmp_path: Path) -> PipelineConfig:
