@@ -42,6 +42,8 @@ def load_corpus(config: CorpusConfig) -> CorpusSnapshot:
 def _discover_paths(root: Path, include: list[str]) -> list[Path]:
     discovered: dict[str, Path] = {}
     for pattern in include:
+        if Path(pattern).is_absolute():
+            raise UserInputError(f"Corpus include pattern must not be absolute: {pattern}")
         for candidate in root.glob(pattern):
             if not candidate.is_file():
                 continue

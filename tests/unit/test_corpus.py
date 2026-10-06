@@ -26,6 +26,11 @@ def test_empty_corpus_is_rejected(tmp_path: Path) -> None:
         load_corpus(CorpusConfig(path=tmp_path, include=["**/*.md"]))
 
 
+def test_absolute_include_pattern_is_rejected(tmp_path: Path) -> None:
+    with pytest.raises(UserInputError, match="absolute"):
+        load_corpus(CorpusConfig(path=tmp_path, include=["/tmp/*.md"]))
+
+
 def test_symlink_escaping_corpus_is_rejected(tmp_path: Path) -> None:
     corpus = tmp_path / "corpus"
     corpus.mkdir()
