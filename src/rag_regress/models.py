@@ -1,10 +1,12 @@
 """Immutable domain models for corpus, evaluation, and persisted artifacts."""
 
+from datetime import datetime
 from pathlib import PurePosixPath
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from rag_regress.config import ChunkingConfig, EmbeddingConfig, RetrievalConfig
 from rag_regress.embeddings import EmbeddingMetadata
 from rag_regress.hashing import hash_canonical
 
@@ -133,6 +135,90 @@ class IndexBundleManifest(BaseModel):
     chunk_ids: tuple[str, ...]
     index_file: str
     chunks_file: str
+
+
+class EnvironmentInfo(BaseModel):
+    """Versions of the runtime that produced one evaluation artifact."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    python_version: str
+    platform: str
+    numpy_version: str
+    faiss_version: str
+    sentence_transformers_version: str
+    rag_regress_version: str
+
+
+class PipelineSnapshot(BaseModel):
+    """Retrieval-relevant configuration without machine-specific paths."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    corpus_include_patterns: tuple[str, ...]
+    chunking: ChunkingConfig
+    embedding: EmbeddingConfig
+    retrieval: RetrievalConfig
+
+
+class CaseMetrics(BaseModel):
+    """Document and optional evidence metrics for one labelled question."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    recall_at_k: float = Field(ge=0.0, le=1.0)
+    hit_at_k: float = Field(ge=0.0, le=1.0)
+    reciprocal_rank: float = Field(ge=0.0, le=1.0)
+    evidence_hit: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
+class CaseResult(BaseModel):
+    """Complete evaluated retrieval result for one dataset case."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: str
+    question: str
+    expected_documents: tuple[str, ...]
+    expected_text: tuple[str, ...]
+    results: tuple[RetrievalResult, ...]
+    metrics: CaseMetrics
+    retrieval_ms: float = Field(ge=0.0)
+
+
+class AggregateMetrics(BaseModel):
+    """Aggregate quality and monotonic retrieval-latency measurements."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    recall_at_k: float = Field(ge=0.0, le=1.0)
+    hit_rate: float = Field(ge=0.0, le=1.0)
+    mrr: float = Field(ge=0.0, le=1.0)
+    evidence_hit_rate: float | None = Field(default=None, ge=0.0, le=1.0)
+    p50_retrieval_ms: float = Field(ge=0.0)
+    p95_retrieval_ms: float = Field(ge=0.0)
+
+
+class RunArtifact(BaseModel):
+    """Versioned, self-describing output from one retrieval evaluation run."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal[1] = 1
+    tool_version: str
+    metric_definition_version: Literal["1"] = "1"
+    dataset_name: str
+    corpus_fingerprint: str
+    dataset_fingerprint: str
+    pipeline: PipelineSnapshot
+    environment: EnvironmentInfo
+    embedding: EmbeddingMetadata
+    started_at: datetime
+    duration_ms: float = Field(ge=0.0)
+    warnings: tuple[str, ...]
+    errors: tuple[str, ...]
+    metrics: AggregateMetrics
+    cases: tuple[CaseResult, ...]
 
 
 def _normalize_document_path(value: str) -> str:
