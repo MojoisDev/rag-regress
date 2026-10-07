@@ -1,0 +1,20 @@
+schema_version: 1
+corpus:
+  path: ../corpus
+  include:
+    - "**/*.txt"
+    - "**/*.md"
+chunking:
+  strategy: words
+  size: 80
+  overlap: 20
+embedding:
+  provider: sentence_transformers
+  model: sentence-transformers/all-MiniLM-L6-v2
+  normalize: true
+retrieval:
+  metric: cosine
+  top_k: 5
+  relevance_threshold: null
+storage:
+  directory: ../../.rag-regress

@@ -1,7 +1,7 @@
 # RAG Regression Tool Design
 
 **Date:** 2026-10-06
-**Status:** Approved
+**Status:** Implemented
 **Working product name:** `rag-regress`
 
 ## 1. Summary

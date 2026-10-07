@@ -1,0 +1,11 @@
+schema_version: 1
+minimum:
+  recall_at_k: 0.80
+  mrr: 0.70
+  hit_rate: 0.80
+maximum:
+  p95_retrieval_ms: 500
+  regressed_cases: 1
+allowed_drop:
+  recall_at_k: 0.05
+  mrr: 0.05

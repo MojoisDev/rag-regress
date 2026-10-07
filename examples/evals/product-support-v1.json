@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "name": "product-support-v1",
+  "cases": [
+    {
+      "id": "reset-password",
+      "question": "How does a user reset their password?",
+      "expected_documents": ["account-guide.md"],
+      "expected_text": ["reset link expires after 30 minutes"]
+    },
+    {
+      "id": "download-invoice",
+      "question": "Where can a billing administrator download an invoice?",
+      "expected_documents": ["billing-guide.md"]
+    },
+    {
+      "id": "change-email-without-old-address",
+      "question": "A customer cannot use their old mailbox. How can they update the login email?",
+      "expected_documents": ["account-guide.md"]
+    },
+    {
+      "id": "refund-arrival-time",
+      "question": "After a duplicate-charge refund is approved, when will the money show up?",
+      "expected_documents": ["billing-guide.md"]
+    },
+    {
+      "id": "locked-user-needs-invoice",
+      "question": "What guidance applies when a locked-out user also needs a copy of a monthly invoice?",
+      "expected_documents": ["account-guide.md", "billing-guide.md"]
+    },
+    {
+      "id": "repeat-lockout-escalation",
+      "question": "Who handles recurring account lockouts after a password reset?",
+      "expected_documents": ["account-guide.md"]
+    }
+  ]
+}
