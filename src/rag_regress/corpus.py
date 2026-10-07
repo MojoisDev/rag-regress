@@ -45,6 +45,14 @@ def _discover_paths(root: Path, include: list[str]) -> list[Path]:
         if Path(pattern).is_absolute():
             raise UserInputError(f"Corpus include pattern must not be absolute: {pattern}")
         for candidate in root.glob(pattern):
+            if candidate.is_symlink():
+                resolved = candidate.resolve()
+                try:
+                    resolved.relative_to(root)
+                except ValueError as exc:
+                    raise UserInputError(
+                        f"Document resolves outside corpus root: {candidate}"
+                    ) from exc
             if not candidate.is_file():
                 continue
             resolved = candidate.resolve()

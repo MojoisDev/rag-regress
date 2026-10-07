@@ -65,3 +65,23 @@ def test_unknown_config_key_is_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(UserInputError, match="unknown"):
         load_pipeline_config(path)
+
+
+@pytest.mark.parametrize("value", [".nan", ".inf", "-.inf"])
+def test_config_rejects_non_finite_relevance_threshold(
+    tmp_path: Path, value: str
+) -> None:
+    path = tmp_path / "bad.yaml"
+    path.write_text(
+        f"""schema_version: 1
+corpus: {{path: corpus, include: ['**/*.md']}}
+chunking: {{strategy: words, size: 10, overlap: 0}}
+embedding: {{provider: sentence_transformers, model: test, normalize: true}}
+retrieval: {{metric: cosine, top_k: 5, relevance_threshold: {value}}}
+storage: {{directory: state}}
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(UserInputError, match="relevance_threshold"):
+        load_pipeline_config(path)

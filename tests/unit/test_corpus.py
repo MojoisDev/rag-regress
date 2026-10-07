@@ -40,3 +40,13 @@ def test_symlink_escaping_corpus_is_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(UserInputError, match="outside corpus root"):
         load_corpus(CorpusConfig(path=corpus, include=["**/*.md"]))
+
+
+def test_broken_symlink_escaping_corpus_is_rejected(tmp_path: Path) -> None:
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    outside_missing = tmp_path / "outside" / "missing.md"
+    (corpus / "escape.md").symlink_to(outside_missing)
+
+    with pytest.raises(UserInputError, match="outside corpus root"):
+        load_corpus(CorpusConfig(path=corpus, include=["**/*.md"]))

@@ -74,6 +74,30 @@ def test_dataset_rejects_duplicate_case_ids(tmp_path: Path, corpus: CorpusSnapsh
         load_evaluation_dataset(path, corpus)
 
 
+def test_dataset_requires_an_explicit_schema_version(
+    tmp_path: Path, corpus: CorpusSnapshot
+) -> None:
+    path = tmp_path / "eval.json"
+    path.write_text(
+        json.dumps(
+            {
+                "name": "support",
+                "cases": [
+                    {
+                        "id": "case",
+                        "question": "Where is it?",
+                        "expected_documents": ["guide.md"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(UserInputError, match="schema_version"):
+        load_evaluation_dataset(path, corpus)
+
+
 def test_dataset_normalizes_trimmed_fields_and_document_paths(
     tmp_path: Path, corpus: CorpusSnapshot
 ) -> None:

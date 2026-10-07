@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -15,6 +16,7 @@ from rag_regress.models import (
     GateReport,
     MetricComparison,
 )
+from tests.unit.test_comparison import make_run
 
 runner = CliRunner()
 
@@ -165,6 +167,41 @@ def test_successful_ingest_and_evaluate_report_their_artifacts(
     assert evaluate_result.exit_code == 0
     assert "mrr=1.0" in evaluate_result.stdout
     assert "Run artifact: run.json" in evaluate_result.stdout
+
+
+@pytest.mark.parametrize("missing_field", ["schema_version", "metric_definition_version"])
+def test_compare_rejects_run_artifacts_with_omitted_version_fields(
+    tmp_path: Path, missing_field: str
+) -> None:
+    baseline_path = tmp_path / "baseline.json"
+    candidate_path = tmp_path / "candidate.json"
+    baseline_payload = make_run().model_dump(mode="json")
+    candidate_payload = make_run().model_dump(mode="json")
+    del candidate_payload[missing_field]
+    baseline_path.write_text(json.dumps(baseline_payload), encoding="utf-8")
+    candidate_path.write_text(json.dumps(candidate_payload), encoding="utf-8")
+
+    result = runner.invoke(cli.app, ["compare", str(baseline_path), str(candidate_path)])
+
+    assert result.exit_code == 2
+    assert f"Invalid run artifact {candidate_path}" in result.stderr
+    assert missing_field in result.stderr
+
+
+def test_compare_rejects_non_finite_numbers_in_run_json(tmp_path: Path) -> None:
+    baseline_path = tmp_path / "baseline.json"
+    candidate_path = tmp_path / "candidate.json"
+    baseline_payload = make_run().model_dump(mode="json")
+    candidate_payload = make_run().model_dump(mode="json")
+    candidate_payload["metrics"]["p95_retrieval_ms"] = float("inf")
+    baseline_path.write_text(json.dumps(baseline_payload), encoding="utf-8")
+    candidate_path.write_text(json.dumps(candidate_payload), encoding="utf-8")
+
+    result = runner.invoke(cli.app, ["compare", str(baseline_path), str(candidate_path)])
+
+    assert result.exit_code == 2
+    assert f"Invalid run artifact {candidate_path}" in result.stderr
+    assert "p95_retrieval_ms" in result.stderr
 
 
 @pytest.mark.parametrize(

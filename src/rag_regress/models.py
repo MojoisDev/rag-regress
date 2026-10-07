@@ -4,17 +4,16 @@ from datetime import datetime
 from pathlib import PurePosixPath
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import Field, field_validator
 
 from rag_regress.config import ChunkingConfig, EmbeddingConfig, RetrievalConfig
 from rag_regress.embeddings import EmbeddingMetadata
 from rag_regress.hashing import hash_canonical
+from rag_regress.validation import StrictModel
 
 
-class Document(BaseModel):
+class Document(StrictModel):
     """A normalized corpus document with a stable identity."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: str
     relative_path: str
@@ -23,19 +22,15 @@ class Document(BaseModel):
     checksum: str
 
 
-class CorpusSnapshot(BaseModel):
+class CorpusSnapshot(StrictModel):
     """The ordered corpus and its deterministic fingerprint."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
 
     documents: tuple[Document, ...]
     fingerprint: str
 
 
-class Chunk(BaseModel):
+class Chunk(StrictModel):
     """A deterministic word-range from a corpus document."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: str
     document_id: str
@@ -46,10 +41,8 @@ class Chunk(BaseModel):
     end_word: int
 
 
-class RetrievalResult(BaseModel):
+class RetrievalResult(StrictModel):
     """One ranked chunk returned by retrieval for an evaluation case."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
 
     chunk_id: str
     document_id: str
@@ -59,10 +52,8 @@ class RetrievalResult(BaseModel):
     text: str
 
 
-class EvaluationCase(BaseModel):
+class EvaluationCase(StrictModel):
     """One labelled question with document and optional evidence expectations."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: str = Field(min_length=1)
     question: str = Field(min_length=1)
@@ -97,12 +88,10 @@ class EvaluationCase(BaseModel):
         return normalized
 
 
-class EvaluationDataset(BaseModel):
+class EvaluationDataset(StrictModel):
     """The strict, versioned collection of labelled evaluation questions."""
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    schema_version: Literal[1] = 1
+    schema_version: Literal[1]
     name: str = Field(min_length=1)
     cases: tuple[EvaluationCase, ...] = Field(min_length=1)
 
@@ -121,10 +110,8 @@ class EvaluationDataset(BaseModel):
         return hash_canonical(self.model_dump(mode="json"))
 
 
-class IndexBundleManifest(BaseModel):
+class IndexBundleManifest(StrictModel):
     """Versioned metadata for one content-addressed FAISS bundle."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
 
     schema_version: Literal[1]
     corpus_fingerprint: str
@@ -135,12 +122,12 @@ class IndexBundleManifest(BaseModel):
     chunk_ids: tuple[str, ...]
     index_file: str
     chunks_file: str
+    index_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    chunks_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
-class EnvironmentInfo(BaseModel):
+class EnvironmentInfo(StrictModel):
     """Versions of the runtime that produced one evaluation artifact."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
 
     python_version: str
     platform: str
@@ -150,10 +137,8 @@ class EnvironmentInfo(BaseModel):
     rag_regress_version: str
 
 
-class PipelineSnapshot(BaseModel):
+class PipelineSnapshot(StrictModel):
     """Retrieval-relevant configuration without machine-specific paths."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
 
     corpus_include_patterns: tuple[str, ...]
     chunking: ChunkingConfig
@@ -161,10 +146,8 @@ class PipelineSnapshot(BaseModel):
     retrieval: RetrievalConfig
 
 
-class CaseMetrics(BaseModel):
+class CaseMetrics(StrictModel):
     """Document and optional evidence metrics for one labelled question."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
 
     recall_at_k: float = Field(ge=0.0, le=1.0)
     hit_at_k: float = Field(ge=0.0, le=1.0)
@@ -172,10 +155,8 @@ class CaseMetrics(BaseModel):
     evidence_hit: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
-class CaseResult(BaseModel):
+class CaseResult(StrictModel):
     """Complete evaluated retrieval result for one dataset case."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: str
     question: str
@@ -186,10 +167,8 @@ class CaseResult(BaseModel):
     retrieval_ms: float = Field(ge=0.0)
 
 
-class AggregateMetrics(BaseModel):
+class AggregateMetrics(StrictModel):
     """Aggregate quality and monotonic retrieval-latency measurements."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
 
     recall_at_k: float = Field(ge=0.0, le=1.0)
     hit_rate: float = Field(ge=0.0, le=1.0)
@@ -199,20 +178,16 @@ class AggregateMetrics(BaseModel):
     p95_retrieval_ms: float = Field(ge=0.0)
 
 
-class MetricComparison(BaseModel):
+class MetricComparison(StrictModel):
     """Baseline, candidate, and candidate-minus-baseline values for one metric."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
 
     baseline: float | None
     candidate: float | None
     delta: float | None
 
 
-class AggregateMetricComparison(BaseModel):
+class AggregateMetricComparison(StrictModel):
     """Metric comparisons for one complete evaluation run."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
 
     recall_at_k: MetricComparison
     hit_rate: MetricComparison
@@ -222,10 +197,8 @@ class AggregateMetricComparison(BaseModel):
     p95_retrieval_ms: MetricComparison
 
 
-class CaseComparison(BaseModel):
+class CaseComparison(StrictModel):
     """Per-case metric changes between two compatible evaluation runs."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: str
     recall_at_k: MetricComparison
@@ -235,10 +208,8 @@ class CaseComparison(BaseModel):
     retrieval_ms: MetricComparison
 
 
-class ComparisonReport(BaseModel):
+class ComparisonReport(StrictModel):
     """Stable comparison of compatible baseline and candidate runs."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
 
     metrics: AggregateMetricComparison
     case_deltas: tuple[CaseComparison, ...]
@@ -247,10 +218,8 @@ class ComparisonReport(BaseModel):
     unchanged_case_ids: tuple[str, ...]
 
 
-class GateFailure(BaseModel):
+class GateFailure(StrictModel):
     """One quality gate whose inclusive boundary was not met."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
 
     gate: str
     expected: str
@@ -258,23 +227,19 @@ class GateFailure(BaseModel):
     baseline: float | None = None
 
 
-class GateReport(BaseModel):
+class GateReport(StrictModel):
     """Complete quality-gate outcome, retaining every failed gate."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
 
     passed: bool
     failures: tuple[GateFailure, ...]
 
 
-class RunArtifact(BaseModel):
+class RunArtifact(StrictModel):
     """Versioned, self-describing output from one retrieval evaluation run."""
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    schema_version: Literal[1] = 1
+    schema_version: Literal[1]
     tool_version: str
-    metric_definition_version: Literal["1"] = "1"
+    metric_definition_version: Literal["1"]
     dataset_name: str
     corpus_fingerprint: str
     dataset_fingerprint: str

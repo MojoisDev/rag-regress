@@ -4,63 +4,52 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
+from pydantic import ValidationError, model_validator
 
 from rag_regress.errors import UserInputError
 from rag_regress.hashing import hash_canonical
+from rag_regress.validation import StrictModel
 
 
-class CorpusConfig(BaseModel):
+class CorpusConfig(StrictModel):
     """Document corpus configuration."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     path: Path
     include: list[str]
 
 
-class ChunkingConfig(BaseModel):
+class ChunkingConfig(StrictModel):
     """Document chunking configuration."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     strategy: Literal["words"]
     size: int
     overlap: int
 
 
-class EmbeddingConfig(BaseModel):
+class EmbeddingConfig(StrictModel):
     """Embedding provider configuration."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     provider: Literal["sentence_transformers"]
     model: str
     normalize: bool
 
 
-class RetrievalConfig(BaseModel):
+class RetrievalConfig(StrictModel):
     """Nearest-neighbour retrieval configuration."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     metric: Literal["cosine"]
     top_k: int
     relevance_threshold: float | None
 
 
-class StorageConfig(BaseModel):
+class StorageConfig(StrictModel):
     """Local artifact storage configuration."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     directory: Path
 
 
-class PipelineConfig(BaseModel):
+class PipelineConfig(StrictModel):
     """The complete version 1 pipeline configuration."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: int
     corpus: CorpusConfig

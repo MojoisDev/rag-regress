@@ -5,17 +5,16 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import Field, ValidationError, model_validator
 
 from rag_regress.comparison import compare_runs
 from rag_regress.errors import UserInputError
 from rag_regress.models import ComparisonReport, GateFailure, GateReport, RunArtifact
+from rag_regress.validation import StrictModel
 
 
-class QualityMetricLimits(BaseModel):
+class QualityMetricLimits(StrictModel):
     """Optional inclusive limits for aggregate quality metrics."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
 
     recall_at_k: float | None = Field(default=None, ge=0.0, le=1.0)
     hit_rate: float | None = Field(default=None, ge=0.0, le=1.0)
@@ -23,20 +22,16 @@ class QualityMetricLimits(BaseModel):
     evidence_hit_rate: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
-class MaximumGateLimits(BaseModel):
+class MaximumGateLimits(StrictModel):
     """Optional inclusive upper limits for latency and regression count."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
 
     p50_retrieval_ms: float | None = Field(default=None, ge=0.0)
     p95_retrieval_ms: float | None = Field(default=None, ge=0.0)
     regressed_cases: int | None = Field(default=None, ge=0)
 
 
-class QualityGateConfig(BaseModel):
+class QualityGateConfig(StrictModel):
     """Versioned, strict quality-gate configuration."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
 
     schema_version: Literal[1]
     minimum: QualityMetricLimits = Field(default_factory=QualityMetricLimits)
@@ -92,7 +87,7 @@ def _evaluate_absolute_gates(candidate: RunArtifact, gates: QualityGateConfig) -
         if minimum is None:
             continue
         actual = getattr(candidate.metrics, metric)
-        if actual is None or actual < minimum:
+        if actual is None or _as_decimal(actual) < _as_decimal(minimum):
             failures.append(
                 GateFailure(
                     gate=f"minimum.{metric}", expected=f">= {minimum}", actual=actual
@@ -102,7 +97,7 @@ def _evaluate_absolute_gates(candidate: RunArtifact, gates: QualityGateConfig) -
         if metric == "regressed_cases" or maximum is None:
             continue
         actual = getattr(candidate.metrics, metric)
-        if actual > maximum:
+        if _as_decimal(actual) > _as_decimal(maximum):
             failures.append(
                 GateFailure(
                     gate=f"maximum.{metric}", expected=f"<= {maximum}", actual=actual

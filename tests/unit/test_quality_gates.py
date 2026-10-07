@@ -156,3 +156,17 @@ def test_load_quality_gates_wraps_file_and_validation_errors(tmp_path: Path) -> 
 
     with pytest.raises(UserInputError, match="Invalid quality gate config"):
         load_quality_gates(path)
+
+
+@pytest.mark.parametrize("value", [".nan", ".inf", "-.inf"])
+def test_load_quality_gates_rejects_non_finite_limits(
+    tmp_path: Path, value: str
+) -> None:
+    path = tmp_path / "quality-gates.yaml"
+    path.write_text(
+        f"schema_version: 1\nmaximum:\n  p95_retrieval_ms: {value}\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(UserInputError, match="p95_retrieval_ms"):
+        load_quality_gates(path)

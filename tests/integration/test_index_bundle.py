@@ -144,6 +144,53 @@ def test_bundle_rejects_persisted_non_unit_faiss_vectors(tmp_path: Path) -> None
         load_index_bundle(config, corpus.fingerprint)
 
 
+def test_bundle_rejects_semantically_altered_chunk_metadata(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    corpus, chunks = _corpus_and_chunks("corpus-corrupt-chunks")
+    build_index_bundle(config, corpus, chunks, DeterministicTestEmbedder())
+    target = bundle_path(config, corpus.fingerprint)
+    chunks_path = target / "chunks.json"
+    payload = json.loads(chunks_path.read_text(encoding="utf-8"))
+    payload["chunks"][0]["text"] = "semantically altered text with the original ID"
+    chunks_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ExecutionError, match=str(chunks_path)):
+        load_index_bundle(config, corpus.fingerprint)
+
+
+def test_bundle_rejects_semantically_altered_normalized_vectors(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    corpus, chunks = _corpus_and_chunks("corpus-corrupt-normalized-vectors")
+    build_index_bundle(config, corpus, chunks, DeterministicTestEmbedder())
+    target = bundle_path(config, corpus.fingerprint)
+    index_path = target / "index.faiss"
+    raw = faiss.read_index(str(index_path))
+    vectors = raw.reconstruct_n(0, raw.ntotal)
+    vectors[0] *= -1.0
+    corrupt = faiss.IndexFlatIP(raw.d)
+    corrupt.add(vectors)
+    faiss.write_index(corrupt, str(index_path))
+
+    with pytest.raises(ExecutionError, match=str(index_path)):
+        load_index_bundle(config, corpus.fingerprint)
+
+
+def test_bundle_reuse_rejects_chunks_that_differ_from_fresh_derivation(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+    corpus, chunks = _corpus_and_chunks("corpus-expected-chunk-mismatch")
+    build_index_bundle(config, corpus, chunks, DeterministicTestEmbedder())
+    changed_chunks = (
+        chunks[0].model_copy(update={"text": "freshly derived text changed"}),
+        *chunks[1:],
+    )
+    target = bundle_path(config, corpus.fingerprint)
+
+    with pytest.raises(ExecutionError, match=str(target)):
+        build_index_bundle(config, corpus, changed_chunks, DeterministicTestEmbedder())
+
+
 def _config(tmp_path: Path) -> PipelineConfig:
     return PipelineConfig(
         schema_version=1,

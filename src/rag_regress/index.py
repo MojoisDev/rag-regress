@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -136,7 +137,9 @@ def build_index_bundle(
     """Build, validate, and atomically publish a content-addressed FAISS bundle."""
     destination = bundle_path(config, corpus.fingerprint)
     if os.path.lexists(destination):
-        return load_index_bundle(config, corpus.fingerprint).manifest
+        return load_index_bundle(
+            config, corpus.fingerprint, expected_chunks=chunks
+        ).manifest
     if not chunks:
         raise ExecutionError("Cannot build an index bundle with no chunks")
 
@@ -166,9 +169,13 @@ def build_index_bundle(
             chunk_ids=tuple(chunk.id for chunk in chunks),
             index_file=_INDEX_FILENAME,
             chunks_file=_CHUNKS_FILENAME,
+            index_sha256=_file_sha256(temporary / _INDEX_FILENAME),
+            chunks_sha256=_file_sha256(temporary / _CHUNKS_FILENAME),
         )
         atomic_write_json(temporary / _MANIFEST_FILENAME, manifest.model_dump(mode="json"))
-        _load_index_bundle_at(temporary, config, corpus.fingerprint)
+        _load_index_bundle_at(
+            temporary, config, corpus.fingerprint, expected_chunks=chunks
+        )
         temporary.replace(destination)
         return manifest
     finally:
@@ -176,7 +183,12 @@ def build_index_bundle(
             shutil.rmtree(temporary)
 
 
-def load_index_bundle(config: PipelineConfig, corpus_fingerprint: str) -> LoadedIndexBundle:
+def load_index_bundle(
+    config: PipelineConfig,
+    corpus_fingerprint: str,
+    *,
+    expected_chunks: tuple[Chunk, ...] | None = None,
+) -> LoadedIndexBundle:
     """Load the exact bundle requested by corpus and index configuration identities."""
     destination = bundle_path(config, corpus_fingerprint)
     if destination.is_symlink():
@@ -187,11 +199,17 @@ def load_index_bundle(config: PipelineConfig, corpus_fingerprint: str) -> Loaded
         )
     if not destination.is_dir():
         raise ExecutionError(f"Invalid index bundle target (expected directory): {destination}")
-    return _load_index_bundle_at(destination, config, corpus_fingerprint)
+    return _load_index_bundle_at(
+        destination, config, corpus_fingerprint, expected_chunks=expected_chunks
+    )
 
 
 def _load_index_bundle_at(
-    directory: Path, config: PipelineConfig, corpus_fingerprint: str
+    directory: Path,
+    config: PipelineConfig,
+    corpus_fingerprint: str,
+    *,
+    expected_chunks: tuple[Chunk, ...] | None = None,
 ) -> LoadedIndexBundle:
     try:
         manifest = IndexBundleManifest.model_validate(_read_json(directory / _MANIFEST_FILENAME))
@@ -200,11 +218,21 @@ def _load_index_bundle_at(
         _validate_relative_filename(manifest.chunks_file, _CHUNKS_FILENAME, directory)
         chunks = _load_chunks(directory / manifest.chunks_file)
         _validate_chunk_table(chunks, manifest, directory)
+        _validate_integrity_hash(
+            directory / manifest.chunks_file, manifest.chunks_sha256
+        )
+        if expected_chunks is not None and chunks != expected_chunks:
+            raise ExecutionError(
+                f"Bundle chunks do not match freshly derived corpus chunks: {directory}"
+            )
         index = FaissIndex.load(directory / manifest.index_file, manifest.dimension)
         if int(index._raw.ntotal) != len(chunks):
             raise ExecutionError(
                 f"FAISS index vector count does not match chunk count in bundle: {directory}"
             )
+        _validate_integrity_hash(
+            directory / manifest.index_file, manifest.index_sha256
+        )
     except (OSError, ValueError, TypeError) as exc:
         raise ExecutionError(f"Invalid index bundle {directory}: {exc}") from exc
     return LoadedIndexBundle(manifest=manifest, index=index, chunks=chunks)
@@ -212,6 +240,22 @@ def _load_index_bundle_at(
 
 def _read_json(path: Path) -> object:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _validate_integrity_hash(path: Path, expected: str) -> None:
+    actual = _file_sha256(path)
+    if actual != expected:
+        raise ExecutionError(
+            f"Bundle file integrity hash does not match manifest: {path}"
+        )
 
 
 def _validate_stored_vectors(raw: Any, dimension: int, path: Path) -> None:

@@ -6,6 +6,7 @@ import platform
 import sys
 import time
 from datetime import UTC, datetime
+from fractions import Fraction
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
@@ -155,8 +156,11 @@ def create_run_artifact(
         case.metrics.evidence_hit for case in cases if case.metrics.evidence_hit is not None
     ]
     latencies = [case.retrieval_ms for case in cases]
+    recall_values, hit_values, reciprocal_ranks = _exact_case_quality(cases)
     return RunArtifact(
+        schema_version=1,
         tool_version=__version__,
+        metric_definition_version="1",
         dataset_name=dataset.name,
         corpus_fingerprint=corpus.fingerprint,
         dataset_fingerprint=dataset.fingerprint,
@@ -168,10 +172,14 @@ def create_run_artifact(
         warnings=(),
         errors=(),
         metrics=AggregateMetrics(
-            recall_at_k=_mean([case.metrics.recall_at_k for case in cases]),
-            hit_rate=_mean([case.metrics.hit_at_k for case in cases]),
-            mrr=_mean([case.metrics.reciprocal_rank for case in cases]),
-            evidence_hit_rate=_mean(evidence_hits) if evidence_hits else None,
+            recall_at_k=_fraction_mean(recall_values),
+            hit_rate=_fraction_mean(hit_values),
+            mrr=_fraction_mean(reciprocal_ranks),
+            evidence_hit_rate=(
+                _fraction_mean([Fraction(str(value)) for value in evidence_hits])
+                if evidence_hits
+                else None
+            ),
             p50_retrieval_ms=nearest_rank_percentile(latencies, 0.5),
             p95_retrieval_ms=nearest_rank_percentile(latencies, 0.95),
         ),
@@ -208,5 +216,33 @@ def _distribution_version(distribution: str) -> str:
         return "not-installed"
 
 
-def _mean(values: list[float]) -> float:
-    return sum(values) / len(values)
+def _exact_case_quality(
+    cases: tuple[CaseResult, ...],
+) -> tuple[list[Fraction], list[Fraction], list[Fraction]]:
+    recalls: list[Fraction] = []
+    hits: list[Fraction] = []
+    reciprocal_ranks: list[Fraction] = []
+    for case in cases:
+        expected = set(case.expected_documents)
+        retrieved = {result.document_path for result in case.results}
+        relevant_count = len(retrieved & expected)
+        recalls.append(Fraction(relevant_count, len(expected)))
+        hits.append(Fraction(int(relevant_count > 0), 1))
+        first_relevant_rank = next(
+            (
+                rank
+                for rank, result in enumerate(case.results, start=1)
+                if result.document_path in expected
+            ),
+            None,
+        )
+        reciprocal_ranks.append(
+            Fraction(1, first_relevant_rank)
+            if first_relevant_rank is not None
+            else Fraction(0, 1)
+        )
+    return recalls, hits, reciprocal_ranks
+
+
+def _fraction_mean(values: list[Fraction]) -> float:
+    return float(sum(values, start=Fraction(0, 1)) / len(values))
