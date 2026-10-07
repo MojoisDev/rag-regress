@@ -49,7 +49,9 @@ def ingest_command(
     ctx: typer.Context,
     config: Annotated[
         Path,
-        typer.Option("--config", help="Pipeline configuration YAML file."),
+        typer.Option(
+            "--config", exists=True, dir_okay=False, help="Pipeline configuration YAML file."
+        ),
     ],
 ) -> None:
     """Build or reuse the index bundle described by CONFIG."""
@@ -63,10 +65,15 @@ def ingest_command(
 @app.command("evaluate")
 def evaluate_command(
     ctx: typer.Context,
-    dataset: Annotated[Path, typer.Argument(help="Evaluation dataset JSON file.")],
+    dataset: Annotated[
+        Path,
+        typer.Argument(exists=True, dir_okay=False, help="Evaluation dataset JSON file."),
+    ],
     config: Annotated[
         Path,
-        typer.Option("--config", help="Pipeline configuration YAML file."),
+        typer.Option(
+            "--config", exists=True, dir_okay=False, help="Pipeline configuration YAML file."
+        ),
     ],
     output: Annotated[
         Path,
@@ -82,8 +89,14 @@ def evaluate_command(
 @app.command("compare")
 def compare_command(
     ctx: typer.Context,
-    baseline: Annotated[Path, typer.Argument(help="Baseline JSON run artifact.")],
-    candidate: Annotated[Path, typer.Argument(help="Candidate JSON run artifact.")],
+    baseline: Annotated[
+        Path,
+        typer.Argument(exists=True, dir_okay=False, help="Baseline JSON run artifact."),
+    ],
+    candidate: Annotated[
+        Path,
+        typer.Argument(exists=True, dir_okay=False, help="Candidate JSON run artifact."),
+    ],
 ) -> None:
     """Compare CANDIDATE with BASELINE."""
     report = execute(ctx, lambda: run_compare(baseline, candidate))
@@ -93,14 +106,22 @@ def compare_command(
 @app.command("check")
 def check_command(
     ctx: typer.Context,
-    candidate: Annotated[Path, typer.Argument(help="Candidate JSON run artifact.")],
+    candidate: Annotated[
+        Path,
+        typer.Argument(exists=True, dir_okay=False, help="Candidate JSON run artifact."),
+    ],
     gates: Annotated[
         Path,
-        typer.Option("--gates", help="Quality-gate YAML file."),
+        typer.Option("--gates", exists=True, dir_okay=False, help="Quality-gate YAML file."),
     ],
     baseline: Annotated[
         Path | None,
-        typer.Option("--baseline", help="Baseline JSON run artifact for relative gates."),
+        typer.Option(
+            "--baseline",
+            exists=True,
+            dir_okay=False,
+            help="Baseline JSON run artifact for relative gates.",
+        ),
     ] = None,
 ) -> None:
     """Check CANDIDATE against quality GATES."""

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -20,6 +21,7 @@ runner = CliRunner()
 
 def test_check_returns_one_after_printing_each_failed_gate(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """A false gate report must be a CI failure, not an input error."""
     report = GateReport(
@@ -34,6 +36,8 @@ def test_check_returns_one_after_printing_each_failed_gate(
         ),
     )
     monkeypatch.setattr(cli, "run_check", lambda *args, **kwargs: report)
+    monkeypatch.chdir(tmp_path)
+    _write_input_files("candidate.json", "baseline.json", "gates.yaml")
 
     result = runner.invoke(
         cli.app,
@@ -47,6 +51,7 @@ def test_check_returns_one_after_printing_each_failed_gate(
 
 def test_evaluate_user_error_is_written_to_stderr_with_exit_two(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """Bad user input must remain concise and distinguishable from gate failures."""
 
@@ -54,6 +59,8 @@ def test_evaluate_user_error_is_written_to_stderr_with_exit_two(
         raise UserInputError("bad dataset")
 
     monkeypatch.setattr(cli, "run_evaluate", fail)
+    monkeypatch.chdir(tmp_path)
+    _write_input_files("eval.json", "config.yaml")
 
     result = runner.invoke(
         cli.app,
@@ -68,6 +75,7 @@ def test_evaluate_user_error_is_written_to_stderr_with_exit_two(
 
 def test_debug_mode_preserves_an_unexpected_exception(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """Removing debug re-raising would hide the exception's traceback from operators."""
 
@@ -75,6 +83,8 @@ def test_debug_mode_preserves_an_unexpected_exception(
         raise RuntimeError("unexpected model state")
 
     monkeypatch.setattr(cli, "run_evaluate", fail)
+    monkeypatch.chdir(tmp_path)
+    _write_input_files("eval.json", "config.yaml")
 
     result = runner.invoke(
         cli.app,
@@ -87,6 +97,7 @@ def test_debug_mode_preserves_an_unexpected_exception(
 
 def test_compare_prints_metric_deltas_and_case_classifications(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """The comparison result must give humans and CI its aggregate and case summary."""
     report = ComparisonReport(
@@ -104,6 +115,8 @@ def test_compare_prints_metric_deltas_and_case_classifications(
         unchanged_case_ids=("same",),
     )
     monkeypatch.setattr(cli, "run_compare", lambda *args, **kwargs: report)
+    monkeypatch.chdir(tmp_path)
+    _write_input_files("baseline.json", "candidate.json")
 
     result = runner.invoke(cli.app, ["compare", "baseline.json", "candidate.json"])
 
@@ -116,6 +129,7 @@ def test_compare_prints_metric_deltas_and_case_classifications(
 
 def test_successful_ingest_and_evaluate_report_their_artifacts(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """Success output must tell an operator what was built and where a run was written."""
     monkeypatch.setattr(
@@ -137,6 +151,8 @@ def test_successful_ingest_and_evaluate_report_their_artifacts(
             )
         ),
     )
+    monkeypatch.chdir(tmp_path)
+    _write_input_files("pipeline.yaml", "eval.json")
 
     ingest_result = runner.invoke(cli.app, ["ingest", "--config", "pipeline.yaml"])
     evaluate_result = runner.invoke(
@@ -149,6 +165,120 @@ def test_successful_ingest_and_evaluate_report_their_artifacts(
     assert evaluate_result.exit_code == 0
     assert "mrr=1.0" in evaluate_result.stdout
     assert "Run artifact: run.json" in evaluate_result.stdout
+
+
+@pytest.mark.parametrize(
+    ("arguments", "valid_files", "boundary"),
+    [
+        (["ingest", "--config", "missing.yaml"], (), "run_ingest"),
+        (
+            ["evaluate", "missing.json", "--config", "config.yaml", "--output", "run.json"],
+            ("config.yaml",),
+            "run_evaluate",
+        ),
+        (
+            ["evaluate", "dataset.json", "--config", "missing.yaml", "--output", "run.json"],
+            ("dataset.json",),
+            "run_evaluate",
+        ),
+        (["compare", "missing.json", "candidate.json"], ("candidate.json",), "run_compare"),
+        (["compare", "baseline.json", "missing.json"], ("baseline.json",), "run_compare"),
+        (
+            ["check", "missing.json", "--gates", "gates.yaml"],
+            ("gates.yaml",),
+            "run_check",
+        ),
+        (
+            ["check", "candidate.json", "--baseline", "missing.json", "--gates", "gates.yaml"],
+            ("candidate.json", "gates.yaml"),
+            "run_check",
+        ),
+        (
+            ["check", "candidate.json", "--gates", "missing.yaml"],
+            ("candidate.json",),
+            "run_check",
+        ),
+    ],
+)
+def test_commands_reject_missing_read_input_before_calling_services(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    arguments: list[str],
+    valid_files: tuple[str, ...],
+    boundary: str,
+) -> None:
+    """A missing read path must be a CLI usage error, never a service invocation."""
+    monkeypatch.chdir(tmp_path)
+    _write_input_files(*valid_files)
+    monkeypatch.setattr(cli, boundary, _service_must_not_run)
+
+    result = runner.invoke(cli.app, arguments)
+
+    assert result.exit_code == 2
+    assert "does not exist" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("arguments", "valid_files", "directory_name", "boundary"),
+    [
+        (["ingest", "--config", "directory"], (), "directory", "run_ingest"),
+        (
+            ["evaluate", "directory", "--config", "config.yaml", "--output", "run.json"],
+            ("config.yaml",),
+            "directory",
+            "run_evaluate",
+        ),
+        (
+            ["evaluate", "dataset.json", "--config", "directory", "--output", "run.json"],
+            ("dataset.json",),
+            "directory",
+            "run_evaluate",
+        ),
+        (
+            ["compare", "directory", "candidate.json"],
+            ("candidate.json",),
+            "directory",
+            "run_compare",
+        ),
+        (["compare", "baseline.json", "directory"], ("baseline.json",), "directory", "run_compare"),
+        (
+            ["check", "directory", "--gates", "gates.yaml"],
+            ("gates.yaml",),
+            "directory",
+            "run_check",
+        ),
+        (
+            ["check", "candidate.json", "--baseline", "directory", "--gates", "gates.yaml"],
+            ("candidate.json", "gates.yaml"),
+            "directory",
+            "run_check",
+        ),
+        (
+            ["check", "candidate.json", "--gates", "directory"],
+            ("candidate.json",),
+            "directory",
+            "run_check",
+        ),
+    ],
+)
+def test_commands_reject_directory_read_input_before_calling_services(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    arguments: list[str],
+    valid_files: tuple[str, ...],
+    directory_name: str,
+    boundary: str,
+) -> None:
+    """A directory supplied where a file is required must be a CLI usage error."""
+    monkeypatch.chdir(tmp_path)
+    _write_input_files(*valid_files)
+    (tmp_path / directory_name).mkdir()
+    monkeypatch.setattr(cli, boundary, _service_must_not_run)
+
+    result = runner.invoke(cli.app, arguments)
+
+    assert result.exit_code == 2
+    assert "is a directory" in result.stderr
 
 
 @pytest.mark.parametrize(
@@ -169,3 +299,12 @@ def test_command_help_lists_the_stable_documented_arguments(
     assert result.exit_code == 0
     for term in required_terms:
         assert term in result.stdout
+
+
+def _write_input_files(*names: str) -> None:
+    for name in names:
+        Path(name).write_text("fixture", encoding="utf-8")
+
+
+def _service_must_not_run(*args: object, **kwargs: object) -> None:
+    raise AssertionError("CLI read-path validation should run before the service boundary")
