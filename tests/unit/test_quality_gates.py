@@ -72,6 +72,42 @@ def test_gate_boundaries_are_inclusive() -> None:
     assert check_quality_gates(candidate, gates, baseline).passed is True
 
 
+def test_allowed_drop_allows_equality_roundoff_at_the_boundary() -> None:
+    gates = QualityGateConfig.model_validate(
+        {"schema_version": 1, "allowed_drop": {"mrr": 0.1}}
+    )
+
+    report = check_quality_gates(make_run(mrr=0.7), gates, make_run(mrr=0.8))
+
+    assert report.passed is True
+
+
+def test_allowed_drop_rejects_a_genuine_excess_beyond_roundoff() -> None:
+    gates = QualityGateConfig.model_validate(
+        {"schema_version": 1, "allowed_drop": {"mrr": 0.1}}
+    )
+    candidate_mrr = (0.8 - 0.1) - 5e-13
+
+    report = check_quality_gates(make_run(mrr=candidate_mrr), gates, make_run(mrr=0.8))
+
+    assert report.passed is False
+    assert report.failures[0].gate == "allowed_drop.mrr"
+
+
+def test_allowed_drop_failure_reports_full_precision_boundary() -> None:
+    baseline_mrr = 0.8
+    allowed_drop = 0.1333333333333333
+    boundary = baseline_mrr - allowed_drop
+    gates = QualityGateConfig.model_validate(
+        {"schema_version": 1, "allowed_drop": {"mrr": allowed_drop}}
+    )
+
+    report = check_quality_gates(make_run(mrr=0.6), gates, make_run(mrr=baseline_mrr))
+
+    assert report.passed is False
+    assert report.failures[0].expected == f">= {repr(boundary)}"
+
+
 def test_config_rejects_unknown_fields_invalid_values_and_empty_gate_files() -> None:
     invalid_configs = (
         {"schema_version": 1},

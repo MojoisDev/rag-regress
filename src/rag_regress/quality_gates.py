@@ -11,8 +11,6 @@ from rag_regress.comparison import compare_runs
 from rag_regress.errors import UserInputError
 from rag_regress.models import ComparisonReport, GateFailure, GateReport, RunArtifact
 
-_ALLOWED_DROP_ABSOLUTE_TOLERANCE = 1e-12
-
 
 class QualityMetricLimits(BaseModel):
     """Optional inclusive limits for aggregate quality metrics."""
@@ -133,7 +131,7 @@ def _evaluate_relative_gates(
         ):
             boundary = baseline_value - allowed_drop if baseline_value is not None else None
             expected = (
-                f">= {boundary:g}"
+                f">= {repr(boundary)}"
                 if boundary is not None
                 else f"baseline - {allowed_drop}"
             )
@@ -168,5 +166,5 @@ def _drops_beyond_allowed(candidate: float, baseline: float, allowed_drop: float
         candidate,
         boundary,
         rel_tol=0.0,
-        abs_tol=_ALLOWED_DROP_ABSOLUTE_TOLERANCE,
+        abs_tol=math.ulp(boundary),
     )
