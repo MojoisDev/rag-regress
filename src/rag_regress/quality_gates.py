@@ -1,5 +1,6 @@
 """Strict, local quality-gate loading and evaluation."""
 
+import math
 from pathlib import Path
 from typing import Literal
 
@@ -9,6 +10,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from rag_regress.comparison import compare_runs
 from rag_regress.errors import UserInputError
 from rag_regress.models import ComparisonReport, GateFailure, GateReport, RunArtifact
+
+_ALLOWED_DROP_ABSOLUTE_TOLERANCE = 1e-12
 
 
 class QualityMetricLimits(BaseModel):
@@ -125,14 +128,13 @@ def _evaluate_relative_gates(
             continue
         candidate_value = getattr(candidate.metrics, metric)
         baseline_value = getattr(baseline.metrics, metric)
-        if (
-            candidate_value is None
-            or baseline_value is None
-            or candidate_value < baseline_value - allowed_drop
+        if candidate_value is None or baseline_value is None or _drops_beyond_allowed(
+            candidate_value, baseline_value, allowed_drop
         ):
+            boundary = baseline_value - allowed_drop if baseline_value is not None else None
             expected = (
-                f">= {baseline_value - allowed_drop}"
-                if baseline_value is not None
+                f">= {boundary:g}"
+                if boundary is not None
                 else f"baseline - {allowed_drop}"
             )
             failures.append(
@@ -157,3 +159,14 @@ def _evaluate_relative_gates(
                 )
             )
     return failures
+
+
+def _drops_beyond_allowed(candidate: float, baseline: float, allowed_drop: float) -> bool:
+    """Return whether a quality drop exceeds its limit beyond float roundoff."""
+    boundary = baseline - allowed_drop
+    return candidate < boundary and not math.isclose(
+        candidate,
+        boundary,
+        rel_tol=0.0,
+        abs_tol=_ALLOWED_DROP_ABSOLUTE_TOLERANCE,
+    )

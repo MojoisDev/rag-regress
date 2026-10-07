@@ -57,13 +57,13 @@ def test_gate_boundaries_are_inclusive() -> None:
         }
     )
     baseline = make_run(
-        mrr=0.9,
+        mrr=0.8,
         case_reciprocal_ranks={"case": 1.0, "other": 1.0},
         case_ids=("case", "other"),
     )
     candidate = make_run(
         recall=0.8,
-        mrr=0.8,
+        mrr=0.7,
         p95=100,
         case_reciprocal_ranks={"case": 0.5, "other": 1.0},
         case_ids=("case", "other"),
