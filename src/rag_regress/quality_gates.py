@@ -1,6 +1,6 @@
 """Strict, local quality-gate loading and evaluation."""
 
-import math
+from decimal import Decimal
 from pathlib import Path
 from typing import Literal
 
@@ -129,9 +129,13 @@ def _evaluate_relative_gates(
         if candidate_value is None or baseline_value is None or _drops_beyond_allowed(
             candidate_value, baseline_value, allowed_drop
         ):
-            boundary = baseline_value - allowed_drop if baseline_value is not None else None
+            boundary = (
+                _allowed_drop_boundary(baseline_value, allowed_drop)
+                if baseline_value is not None
+                else None
+            )
             expected = (
-                f">= {repr(boundary)}"
+                f">= {boundary}"
                 if boundary is not None
                 else f"baseline - {allowed_drop}"
             )
@@ -160,11 +164,15 @@ def _evaluate_relative_gates(
 
 
 def _drops_beyond_allowed(candidate: float, baseline: float, allowed_drop: float) -> bool:
-    """Return whether a quality drop exceeds its limit beyond float roundoff."""
-    boundary = baseline - allowed_drop
-    return candidate < boundary and not math.isclose(
-        candidate,
-        boundary,
-        rel_tol=0.0,
-        abs_tol=math.ulp(boundary),
-    )
+    """Return whether the decimal candidate value falls below its decimal limit."""
+    return _as_decimal(candidate) < _allowed_drop_boundary(baseline, allowed_drop)
+
+
+def _allowed_drop_boundary(baseline: float, allowed_drop: float) -> Decimal:
+    """Calculate the human-authored decimal lower boundary without binary roundoff."""
+    return _as_decimal(baseline) - _as_decimal(allowed_drop)
+
+
+def _as_decimal(value: float) -> Decimal:
+    """Convert a metric's stable display representation into an exact decimal."""
+    return Decimal(repr(value))

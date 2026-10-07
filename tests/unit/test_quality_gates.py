@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import pytest
@@ -80,6 +81,20 @@ def test_allowed_drop_allows_equality_roundoff_at_the_boundary() -> None:
     report = check_quality_gates(make_run(mrr=0.7), gates, make_run(mrr=0.8))
 
     assert report.passed is True
+
+
+def test_allowed_drop_rejects_next_float_below_an_exact_decimal_boundary() -> None:
+    gates = QualityGateConfig.model_validate(
+        {"schema_version": 1, "allowed_drop": {"mrr": 0.25}}
+    )
+    baseline = make_run(mrr=0.75)
+
+    assert check_quality_gates(make_run(mrr=0.5), gates, baseline).passed is True
+
+    report = check_quality_gates(make_run(mrr=math.nextafter(0.5, 0.0)), gates, baseline)
+
+    assert report.passed is False
+    assert report.failures[0].gate == "allowed_drop.mrr"
 
 
 def test_allowed_drop_rejects_a_genuine_excess_beyond_roundoff() -> None:
