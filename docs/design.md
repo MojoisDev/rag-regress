@@ -130,7 +130,7 @@ rag-from-scratch/
 │   ├── corpus/
 │   ├── evals/
 │   └── configs/
-├── docs/superpowers/specs/
+├── docs/
 ├── pyproject.toml
 ├── README.md
 └── .gitignore

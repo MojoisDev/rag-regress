@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.11/3.12, Pydantic 2, PyYAML, NumPy, FAISS CPU, Sentence Transformers, Typer, pytest, Ruff, mypy, `build`.
 
-**Spec:** `docs/superpowers/specs/2026-10-06-rag-regression-tool-design.md`
+**Spec:** `docs/design.md`
 
 ## Global Constraints
 
@@ -138,7 +138,7 @@ strict = true
 packages = ["rag_regress"]
 ```
 
-Create `.gitignore` with `.venv/`, `__pycache__/`, `.pytest_cache/`, `.mypy_cache/`, `.ruff_cache/`, `dist/`, `build/`, `*.egg-info/`, `.rag-regress/`, and `runs/`. Create a minimal root `README.md` containing the project name, the product claim from the spec, and the sentence `Implementation in progress; see the approved design and implementation plan under docs/superpowers.` Document in `examples/prototype/README.md` that these scripts are the preserved learning prototype, are not part of the CLI, and that `naive_rag.py` additionally needs Ollama.
+Create `.gitignore` with `.venv/`, `__pycache__/`, `.pytest_cache/`, `.mypy_cache/`, `.ruff_cache/`, `dist/`, `build/`, `*.egg-info/`, `.rag-regress/`, and `runs/`. Create a minimal root `README.md` containing the project name, the product claim from the spec, and the sentence `Implementation in progress; see the approved design and implementation plan under docs/.` Document in `examples/prototype/README.md` that these scripts are the preserved learning prototype, are not part of the CLI, and that `naive_rag.py` additionally needs Ollama.
 
 - [ ] **Step 2: Write strict configuration tests**
 
@@ -1245,7 +1245,7 @@ git commit -m "feat: expose rag regression CLI"
 - Modify: `README.md`
 - Create: `.github/workflows/ci.yml`
 - Create: `tests/integration/test_example_files.py`
-- Modify: `docs/superpowers/specs/2026-10-06-rag-regression-tool-design.md`
+- Modify: `docs/design.md`
 
 **Interfaces:**
 - Consumes: the complete CLI.
@@ -1371,7 +1371,7 @@ Expected: tests, lint, types, build, help, and whitespace checks pass. Before th
 - [ ] **Step 7: Commit the completed v0.1**
 
 ```bash
-git add README.md .github examples tests/integration/test_example_files.py docs/superpowers/specs/2026-10-06-rag-regression-tool-design.md
+git add README.md .github examples tests/integration/test_example_files.py docs/design.md
 git commit -m "docs: complete rag-regress v0.1 demonstration"
 ```
 

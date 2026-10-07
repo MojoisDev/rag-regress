@@ -50,8 +50,11 @@ def test_sentence_transformer_adapter_normalizes_model_output(
         def __init__(self, model_name: str) -> None:
             self.model_name = model_name
 
-        def get_sentence_embedding_dimension(self) -> int:
+        def get_embedding_dimension(self) -> int:
             return 2
+
+        def get_sentence_embedding_dimension(self) -> int:
+            raise AssertionError("deprecated dimension API must not be called")
 
         def encode(
             self, texts: list[str], *, convert_to_numpy: bool, show_progress_bar: bool
@@ -75,6 +78,29 @@ def test_sentence_transformer_adapter_normalizes_model_output(
     assert embedder.metadata.model == "test-model"
     assert vectors.dtype == np.float32
     np.testing.assert_allclose(np.linalg.norm(vectors, axis=1), np.ones(2))
+
+
+def test_sentence_transformer_adapter_supports_legacy_dimension_api(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class LegacySentenceTransformer:
+        def __init__(self, model_name: str) -> None:
+            self.model_name = model_name
+
+        def get_sentence_embedding_dimension(self) -> int:
+            return 2
+
+    monkeypatch.setitem(
+        sys.modules,
+        "sentence_transformers",
+        types.SimpleNamespace(SentenceTransformer=LegacySentenceTransformer),
+    )
+
+    embedder = build_embedder(
+        EmbeddingConfig(provider="sentence_transformers", model="legacy-model", normalize=True)
+    )
+
+    assert embedder.dimension == 2
 
 
 def _skip_if_model_not_cached(error: ExecutionError) -> None:

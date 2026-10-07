@@ -72,10 +72,14 @@ class SentenceTransformerEmbedder:
         self._config = config
         self._metadata = EmbeddingMetadata(provider=config.provider, model=config.model)
         try:
-            import sentence_transformers  # type: ignore[import-not-found]
+            import sentence_transformers
 
             self._model: Any = sentence_transformers.SentenceTransformer(config.model)
-            dimension = self._model.get_sentence_embedding_dimension()
+            get_dimension = getattr(self._model, "get_embedding_dimension", None)
+            if callable(get_dimension):
+                dimension = get_dimension()
+            else:
+                dimension = self._model.get_sentence_embedding_dimension()
         except Exception as exc:
             raise ExecutionError(f"Unable to load embedding model {config.model!r}: {exc}") from exc
 

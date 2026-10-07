@@ -1,8 +1,7 @@
-from sentence_transformers import SentenceTransformer
+import faiss
 import numpy as np
 import ollama
-import faiss
-
+from sentence_transformers import SentenceTransformer
 
 # -----------------------------
 # 1. Chunking
@@ -104,14 +103,14 @@ distances, indices = index.search(
 
 top_results = []
 
-for distance, index_number in zip(distances[0], indices[0]):
+for distance, index_number in zip(distances[0], indices[0], strict=True):
     chunk = chunks[index_number]
     top_results.append((chunk, distance))
 
 print("\nRetrieved context:\n")
 
 for chunk, similarity in top_results:
-    print(f"Distance: {distance:.4f}")
+    print(f"Distance: {similarity:.4f}")
     print(chunk)
     print()
 

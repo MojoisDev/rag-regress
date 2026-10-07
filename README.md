@@ -125,7 +125,7 @@ examples/evals/        labelled evaluation datasets
 examples/configs/      baseline and candidate pipeline configurations
 examples/quality-gates.yaml
 .github/workflows/     Python 3.11/3.12 offline verification
-docs/superpowers/      approved design and implementation plan
+docs/                  public design and implementation plan
 ```
 
 ## Development and contributions
