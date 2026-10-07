@@ -199,6 +199,74 @@ class AggregateMetrics(BaseModel):
     p95_retrieval_ms: float = Field(ge=0.0)
 
 
+class MetricComparison(BaseModel):
+    """Baseline, candidate, and candidate-minus-baseline values for one metric."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    baseline: float | None
+    candidate: float | None
+    delta: float | None
+
+
+class AggregateMetricComparison(BaseModel):
+    """Metric comparisons for one complete evaluation run."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    recall_at_k: MetricComparison
+    hit_rate: MetricComparison
+    mrr: MetricComparison
+    evidence_hit_rate: MetricComparison
+    p50_retrieval_ms: MetricComparison
+    p95_retrieval_ms: MetricComparison
+
+
+class CaseComparison(BaseModel):
+    """Per-case metric changes between two compatible evaluation runs."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: str
+    recall_at_k: MetricComparison
+    hit_at_k: MetricComparison
+    reciprocal_rank: MetricComparison
+    evidence_hit: MetricComparison
+    retrieval_ms: MetricComparison
+
+
+class ComparisonReport(BaseModel):
+    """Stable comparison of compatible baseline and candidate runs."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    metrics: AggregateMetricComparison
+    case_deltas: tuple[CaseComparison, ...]
+    improved_case_ids: tuple[str, ...]
+    regressed_case_ids: tuple[str, ...]
+    unchanged_case_ids: tuple[str, ...]
+
+
+class GateFailure(BaseModel):
+    """One quality gate whose inclusive boundary was not met."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    gate: str
+    expected: str
+    actual: float | None
+    baseline: float | None = None
+
+
+class GateReport(BaseModel):
+    """Complete quality-gate outcome, retaining every failed gate."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    passed: bool
+    failures: tuple[GateFailure, ...]
+
+
 class RunArtifact(BaseModel):
     """Versioned, self-describing output from one retrieval evaluation run."""
 
