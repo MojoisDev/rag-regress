@@ -52,7 +52,7 @@ class RetrievalResult(BaseModel):
     chunk_id: str
     document_id: str
     document_path: str
-    rank: int
+    rank: int = Field(ge=1)
     score: float
     text: str
 

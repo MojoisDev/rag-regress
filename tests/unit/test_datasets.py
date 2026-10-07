@@ -5,7 +5,7 @@ import pytest
 
 from rag_regress.datasets import load_evaluation_dataset
 from rag_regress.errors import UserInputError
-from rag_regress.models import CorpusSnapshot, Document
+from rag_regress.models import CorpusSnapshot, Document, RetrievalResult
 
 
 @pytest.fixture
@@ -214,3 +214,16 @@ def test_dataset_rejects_blank_required_text(tmp_path: Path, corpus: CorpusSnaps
 
     with pytest.raises(UserInputError, match="Invalid evaluation dataset"):
         load_evaluation_dataset(path, corpus)
+
+
+@pytest.mark.parametrize("rank", [0, -1])
+def test_retrieval_result_rejects_non_one_based_rank(rank: int) -> None:
+    with pytest.raises(ValueError, match="greater than or equal to 1"):
+        RetrievalResult(
+            chunk_id="chunk-1",
+            document_id="document-1",
+            document_path="guide.md",
+            rank=rank,
+            score=0.9,
+            text="Guide text",
+        )
