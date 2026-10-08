@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol, cast
 
 import numpy as np
 from numpy.typing import NDArray
 
 from rag_regress.config import EmbeddingConfig
-from rag_regress.errors import ExecutionError
+from rag_regress.errors import ExecutionError, UserInputError
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,6 +20,7 @@ class EmbeddingMetadata:
 
     provider: str
     model: str
+    revision: str
 
 
 class Embedder(Protocol):
@@ -69,12 +71,21 @@ class SentenceTransformerEmbedder:
     """Sentence Transformers adapter that validates every model output."""
 
     def __init__(self, config: EmbeddingConfig) -> None:
+        if Path(config.model).exists():
+            raise UserInputError(
+                "Pinned embedding models must use a Hugging Face model ID; "
+                "local model paths ignore revisions"
+            )
         self._config = config
-        self._metadata = EmbeddingMetadata(provider=config.provider, model=config.model)
+        self._metadata = EmbeddingMetadata(
+            provider=config.provider, model=config.model, revision=config.revision
+        )
         try:
             import sentence_transformers
 
-            self._model: Any = sentence_transformers.SentenceTransformer(config.model)
+            self._model: Any = sentence_transformers.SentenceTransformer(
+                config.model, revision=config.revision
+            )
             get_dimension = getattr(self._model, "get_embedding_dimension", None)
             if callable(get_dimension):
                 dimension = get_dimension()
@@ -135,3 +146,15 @@ class SentenceTransformerEmbedder:
 def build_embedder(config: EmbeddingConfig) -> Embedder:
     """Build the configured v0.1 embedding implementation."""
     return SentenceTransformerEmbedder(config)
+
+
+def verify_embedding_compatibility(
+    actual: EmbeddingMetadata, expected: EmbeddingMetadata
+) -> None:
+    """Reject embeddings from a different model or immutable revision."""
+    if actual != expected:
+        raise UserInputError(
+            "Embedding metadata does not match the prebuilt index bundle: "
+            f"expected {expected.provider}/{expected.model}@{expected.revision}, "
+            f"got {actual.provider}/{actual.model}@{actual.revision}"
+        )

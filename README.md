@@ -28,6 +28,24 @@ Hugging Face settings; pre-download it according to your organization's
 approved dependency/model process, or use their offline settings to prohibit
 network access.
 
+### Model revision pinning
+
+Every pipeline requires `embedding.revision`, a full lowercase 40-character
+Hugging Face commit SHA, passed to the
+[Sentence Transformers loader](https://sbert.net/docs/package_reference/sentence_transformer/model.html).
+The examples pin `all-MiniLM-L6-v2` to
+`1110a243fdf4706b3f48f1d95db1a4f5529b4d41`. Model IDs resolve through the
+Hugging Face cache as usual; local model directory paths are unsupported because
+Sentence Transformers ignores revisions for those paths.
+
+To migrate an existing config, add the SHA of the model version you intend to
+use, then rerun `ingest` and `evaluate`. The revision is included in index
+identity and embedding metadata, so changing it selects a separate bundle.
+Existing bundles are preserved; artifacts without revision metadata must be
+regenerated before comparison or quality checks.
+
+### Run the example
+
 Create a fresh environment and install the package:
 
 ```bash
@@ -72,6 +90,39 @@ Unchanged: change-email-without-old-address, download-invoice, locked-user-needs
 of at least 0.80, MRR of at least 0.70, hit rate of at least 0.80, p95
 retrieval latency no greater than 500 ms, at most one regressed case, and no
 more than a 0.05 drop in Recall@k or MRR.
+
+## Compare chunk sizes
+
+Use `sweep` to build and evaluate several word chunk sizes on the same corpus
+and labelled dataset:
+
+```bash
+.venv/bin/rag-regress sweep examples/evals/product-support-v1.json \
+  --config examples/configs/baseline.yaml \
+  --size 40 --size 80 --size 160 --output runs/chunk-sweep
+```
+
+The first size is the baseline. Provide at least two distinct positive sizes,
+each greater than the config's overlap. Overlap, model revision, top-k, and score
+threshold stay fixed; the model loads once and each variant gets a warm-up query.
+The original config is unchanged, and validated index bundles are reused.
+
+The command prints quality and retrieval latency for each size and creates:
+
+- `size-40.json`, `size-80.json`, `size-160.json`: ordinary run artifacts usable
+  with `compare` and `check`.
+- `summary.json`: schema version, baseline size, corpus/dataset fingerprints,
+  and a `runs` array containing size, chunk count, relative artifact filename,
+  metrics, and the full comparison with the baseline (`null` for the baseline).
+
+Choose a new output directory for each experiment. It is published only after
+every variant succeeds; a failure removes temporary output while retaining any
+completed index bundles. The sweep does not automatically select a winner:
+review quality, evidence coverage, and latency together, and repeat measurements
+before drawing performance conclusions.
+
+This workflow is informed by the
+[chunk-size experiments in RAG Techniques](https://github.com/NirDiamant/RAG_Techniques#advanced-techniques).
 
 ## Metrics and labels
 

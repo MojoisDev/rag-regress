@@ -1,5 +1,6 @@
 import sys
 import types
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -47,7 +48,8 @@ def test_sentence_transformer_adapter_normalizes_model_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FakeSentenceTransformer:
-        def __init__(self, model_name: str) -> None:
+        def __init__(self, model_name: str, *, revision: str) -> None:
+            assert revision == "a" * 40
             self.model_name = model_name
 
         def get_embedding_dimension(self) -> int:
@@ -70,12 +72,15 @@ def test_sentence_transformer_adapter_normalizes_model_output(
     )
 
     embedder = build_embedder(
-        EmbeddingConfig(provider="sentence_transformers", model="test-model", normalize=True)
+        EmbeddingConfig(
+            provider="sentence_transformers", model="test-model", revision="a" * 40, normalize=True
+        )
     )
     vectors = embedder.embed_documents(["first", "second"])
 
     assert embedder.dimension == 2
     assert embedder.metadata.model == "test-model"
+    assert embedder.metadata.revision == "a" * 40
     assert vectors.dtype == np.float32
     np.testing.assert_allclose(np.linalg.norm(vectors, axis=1), np.ones(2))
 
@@ -84,7 +89,8 @@ def test_sentence_transformer_adapter_supports_legacy_dimension_api(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class LegacySentenceTransformer:
-        def __init__(self, model_name: str) -> None:
+        def __init__(self, model_name: str, *, revision: str) -> None:
+            assert revision == "a" * 40
             self.model_name = model_name
 
         def get_sentence_embedding_dimension(self) -> int:
@@ -97,10 +103,36 @@ def test_sentence_transformer_adapter_supports_legacy_dimension_api(
     )
 
     embedder = build_embedder(
-        EmbeddingConfig(provider="sentence_transformers", model="legacy-model", normalize=True)
+        EmbeddingConfig(
+            provider="sentence_transformers",
+            model="legacy-model",
+            revision="a" * 40,
+            normalize=True,
+        )
     )
 
     assert embedder.dimension == 2
+
+
+def test_model_revision_mismatch_is_rejected() -> None:
+    from rag_regress.embeddings import EmbeddingMetadata
+    from rag_regress.errors import UserInputError
+    from rag_regress.experiments import verify_embedding_compatibility
+
+    actual = EmbeddingMetadata(provider="test", model="same-model", revision="a" * 40)
+    expected = EmbeddingMetadata(provider="test", model="same-model", revision="b" * 40)
+    with pytest.raises(UserInputError, match="a{40}"):
+        verify_embedding_compatibility(actual, expected)
+
+
+def test_local_model_directory_cannot_bypass_revision_pinning(tmp_path: Path) -> None:
+    from rag_regress.errors import UserInputError
+
+    config = EmbeddingConfig(
+        provider="sentence_transformers", model=str(tmp_path), revision="a" * 40, normalize=True
+    )
+    with pytest.raises(UserInputError, match="local"):
+        build_embedder(config)
 
 
 def _skip_if_model_not_cached(error: ExecutionError) -> None:
@@ -124,6 +156,7 @@ def test_sentence_transformer_embedder_smoke_uses_cached_model(
     config = EmbeddingConfig(
         provider="sentence_transformers",
         model="sentence-transformers/all-MiniLM-L6-v2",
+        revision="1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
         normalize=True,
     )
 

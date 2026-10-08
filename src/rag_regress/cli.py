@@ -11,7 +11,7 @@ from pydantic import ValidationError
 
 from rag_regress.comparison import compare_runs
 from rag_regress.errors import ExecutionError, UserInputError
-from rag_regress.experiments import evaluate, ingest
+from rag_regress.experiments import evaluate, ingest, sweep
 from rag_regress.models import (
     ComparisonReport,
     GateFailure,
@@ -101,6 +101,33 @@ def compare_command(
     """Compare CANDIDATE with BASELINE."""
     report = execute(ctx, lambda: run_compare(baseline, candidate))
     _print_comparison(report)
+
+
+@app.command("sweep")
+def sweep_command(
+    ctx: typer.Context,
+    dataset: Annotated[
+        Path,
+        typer.Argument(
+            exists=True, dir_okay=False, metavar="DATASET", help="Evaluation dataset JSON file."
+        ),
+    ],
+    config: Annotated[
+        Path,
+        typer.Option("--config", exists=True, dir_okay=False, help="Base pipeline YAML file."),
+    ],
+    size: Annotated[
+        list[int], typer.Option("--size", help="Chunk size in words; repeat for each variant.")
+    ],
+    output: Annotated[
+        Path, typer.Option("--output", help="New directory for run artifacts and summary.")
+    ],
+) -> None:
+    """Build and evaluate chunk sizes, using the first SIZE as the baseline."""
+    runs = execute(ctx, lambda: sweep(config, dataset, tuple(size), output))
+    for run in runs:
+        typer.echo(f"size={run.pipeline.chunking.size}: {_format_aggregate_metrics(run)}")
+    typer.echo(f"Sweep summary: {output / 'summary.json'}")
 
 
 @app.command("check")

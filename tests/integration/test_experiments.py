@@ -35,6 +35,8 @@ def test_ingest_then_evaluate_writes_a_versioned_round_trippable_run_artifact(
     assert manifest.chunk_count > 0
     assert run.schema_version == 1
     assert run.corpus_fingerprint == manifest.corpus_fingerprint
+    assert run.embedding.revision == manifest.embedding.revision == "a" * 40
+    assert run.pipeline.embedding.revision == "a" * 40
     assert run.dataset_fingerprint
     assert len(run.cases) == 2
     assert run.metrics.recall_at_k == 1.0
@@ -198,6 +200,7 @@ def _write_fixture_inputs(tmp_path: Path) -> tuple[Path, Path]:
                 "embedding:",
                 "  provider: sentence_transformers",
                 "  model: offline-test-model",
+                "  revision: " + "a" * 40,
                 "  normalize: true",
                 "retrieval:",
                 "  metric: cosine",

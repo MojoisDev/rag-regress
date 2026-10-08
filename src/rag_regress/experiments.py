@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import os
 import platform
+import shutil
 import sys
 import time
+import uuid
 from datetime import UTC, datetime
 from fractions import Fraction
 from importlib.metadata import PackageNotFoundError, version
@@ -13,10 +16,16 @@ from pathlib import Path
 from rag_regress import __version__
 from rag_regress.artifacts import atomic_write_json
 from rag_regress.chunking import chunk_corpus
+from rag_regress.comparison import compare_runs
 from rag_regress.config import PipelineConfig, RetrievalConfig, load_pipeline_config
 from rag_regress.corpus import load_corpus
 from rag_regress.datasets import load_evaluation_dataset
-from rag_regress.embeddings import Embedder, EmbeddingMetadata, build_embedder
+from rag_regress.embeddings import (
+    Embedder,
+    EmbeddingMetadata,
+    build_embedder,
+    verify_embedding_compatibility,
+)
 from rag_regress.errors import UserInputError
 from rag_regress.index import LoadedIndexBundle, build_index_bundle, load_index_bundle
 from rag_regress.metrics import (
@@ -62,6 +71,82 @@ def evaluate(
     dataset = load_evaluation_dataset(dataset_path, corpus)
     bundle = load_index_bundle(config, corpus.fingerprint)
     active_embedder = embedder or build_embedder(config.embedding)
+    artifact = _evaluate_loaded(config, corpus, dataset, bundle, active_embedder)
+    atomic_write_json(output_path, artifact.model_dump(mode="json"))
+    return artifact
+
+
+def sweep(
+    config_path: Path,
+    dataset_path: Path,
+    sizes: tuple[int, ...],
+    output_directory: Path,
+) -> tuple[RunArtifact, ...]:
+    """Compare chunk sizes on one corpus/dataset and publish a complete experiment."""
+    config = load_pipeline_config(config_path)
+    if len(sizes) < 2 or len(set(sizes)) != len(sizes):
+        raise UserInputError("Provide at least two distinct chunk sizes")
+    if any(size <= config.chunking.overlap or size <= 0 for size in sizes):
+        raise UserInputError("Each chunk size must be positive and greater than chunking.overlap")
+    if os.path.lexists(output_directory):
+        raise UserInputError(f"Sweep output already exists: {output_directory}")
+    configs = tuple(
+        config.model_copy(update={"chunking": config.chunking.model_copy(update={"size": size})})
+        for size in sizes
+    )
+    corpus = load_corpus(config.corpus)
+    dataset = load_evaluation_dataset(dataset_path, corpus)
+    active_embedder = build_embedder(config.embedding)
+    output_directory.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output_directory.with_name(f".{output_directory.name}.{uuid.uuid4().hex}.tmp")
+    runs: list[RunArtifact] = []
+    rows: list[dict[str, object]] = []
+    try:
+        temporary.mkdir()
+        for variant in configs:
+            chunks = chunk_corpus(corpus, variant.chunking)
+            manifest = build_index_bundle(variant, corpus, chunks, active_embedder)
+            bundle = load_index_bundle(variant, corpus.fingerprint)
+            run = _evaluate_loaded(variant, corpus, dataset, bundle, active_embedder)
+            filename = f"size-{variant.chunking.size}.json"
+            atomic_write_json(temporary / filename, run.model_dump(mode="json"))
+            rows.append(
+                {
+                    "size": variant.chunking.size,
+                    "chunk_count": manifest.chunk_count,
+                    "artifact": filename,
+                    "metrics": run.metrics.model_dump(mode="json"),
+                    "comparison": compare_runs(runs[0], run).model_dump(mode="json")
+                    if runs
+                    else None,
+                }
+            )
+            runs.append(run)
+        atomic_write_json(
+            temporary / "summary.json",
+            {
+                "schema_version": 1,
+                "baseline_size": sizes[0],
+                "corpus_fingerprint": corpus.fingerprint,
+                "dataset_fingerprint": dataset.fingerprint,
+                "runs": rows,
+            },
+        )
+        temporary.replace(output_directory)
+    finally:
+        if temporary.exists():
+            shutil.rmtree(temporary)
+    return tuple(runs)
+
+
+def _evaluate_loaded(
+    config: PipelineConfig,
+    corpus: CorpusSnapshot,
+    dataset: EvaluationDataset,
+    bundle: LoadedIndexBundle,
+    active_embedder: Embedder,
+) -> RunArtifact:
+    """Measure one configuration using validated inputs and a loaded model."""
     verify_embedding_compatibility(active_embedder.metadata, bundle.manifest.embedding)
     active_embedder.embed_query(dataset.cases[0].question)
 
@@ -70,7 +155,7 @@ def evaluate(
     cases = tuple(
         evaluate_case(case, config.retrieval, bundle, active_embedder) for case in dataset.cases
     )
-    artifact = create_run_artifact(
+    return create_run_artifact(
         config=config,
         corpus=corpus,
         dataset=dataset,
@@ -79,20 +164,6 @@ def evaluate(
         started_at=started_at,
         duration_ms=(time.perf_counter() - run_started) * 1000,
     )
-    atomic_write_json(output_path, artifact.model_dump(mode="json"))
-    return artifact
-
-
-def verify_embedding_compatibility(
-    actual: EmbeddingMetadata, expected: EmbeddingMetadata
-) -> None:
-    """Reject a query embedder whose identity differs from the prebuilt bundle."""
-    if actual != expected:
-        raise UserInputError(
-            "Embedding metadata does not match the prebuilt index bundle: "
-            f"expected {expected.provider}/{expected.model}, "
-            f"got {actual.provider}/{actual.model}"
-        )
 
 
 def evaluate_case(

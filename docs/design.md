@@ -202,6 +202,7 @@ chunking:
 embedding:
   provider: sentence_transformers
   model: sentence-transformers/all-MiniLM-L6-v2
+  revision: 1110a243fdf4706b3f48f1d95db1a4f5529b4d41
   normalize: true
 retrieval:
   metric: cosine
@@ -218,6 +219,10 @@ Rules:
 - `overlap` must be non-negative and smaller than `size`.
 - v0.1 accepts only `words`, `sentence_transformers`, and `cosine` for the respective fields.
 - `normalize` must be `true` when the metric is cosine.
+- `embedding.revision` must be a full lowercase 40-character Hugging Face commit SHA;
+  branches and tags are rejected. Local model paths are unsupported because they
+  bypass revision selection. The revision is passed to the loader and recorded
+  in bundle and run metadata; it participates in the index configuration fingerprint.
 - `top_k` must be positive.
 - Unknown keys are rejected to catch misspellings.
 

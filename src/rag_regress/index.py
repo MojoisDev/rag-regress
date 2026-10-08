@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
@@ -17,7 +18,7 @@ from numpy.typing import NDArray
 
 from rag_regress.artifacts import atomic_write_json
 from rag_regress.config import PipelineConfig, index_config_fingerprint
-from rag_regress.embeddings import Embedder, normalize_vectors
+from rag_regress.embeddings import Embedder, normalize_vectors, verify_embedding_compatibility
 from rag_regress.errors import ExecutionError, UserInputError
 from rag_regress.models import Chunk, CorpusSnapshot, IndexBundleManifest
 
@@ -137,9 +138,11 @@ def build_index_bundle(
     """Build, validate, and atomically publish a content-addressed FAISS bundle."""
     destination = bundle_path(config, corpus.fingerprint)
     if os.path.lexists(destination):
-        return load_index_bundle(
+        existing = load_index_bundle(
             config, corpus.fingerprint, expected_chunks=chunks
         ).manifest
+        verify_embedding_compatibility(embedder.metadata, existing.embedding)
+        return existing
     if not chunks:
         raise ExecutionError("Cannot build an index bundle with no chunks")
 
@@ -176,7 +179,16 @@ def build_index_bundle(
         _load_index_bundle_at(
             temporary, config, corpus.fingerprint, expected_chunks=chunks
         )
-        temporary.replace(destination)
+        try:
+            temporary.replace(destination)
+        except OSError as exc:
+            if exc.errno not in (errno.EEXIST, errno.ENOTEMPTY):
+                raise
+            existing = load_index_bundle(
+                config, corpus.fingerprint, expected_chunks=chunks
+            ).manifest
+            verify_embedding_compatibility(embedder.metadata, existing.embedding)
+            return existing
         return manifest
     finally:
         if temporary.exists():
@@ -260,17 +272,20 @@ def _validate_integrity_hash(path: Path, expected: str) -> None:
 
 def _validate_stored_vectors(raw: Any, dimension: int, path: Path) -> None:
     """Reject a readable index whose persisted rows are not cosine-compatible."""
-    try:
-        vectors = np.asarray(raw.reconstruct_n(0, int(raw.ntotal)), dtype=np.float32)
-    except Exception as exc:
-        raise ExecutionError(f"Unable to validate FAISS index vectors {path}: {exc}") from exc
-    if vectors.ndim != 2 or vectors.shape != (int(raw.ntotal), dimension):
-        raise ExecutionError(f"FAISS index stored vector shape is invalid: {path}")
-    if not np.all(np.isfinite(vectors)):
-        raise ExecutionError(f"FAISS index vectors must be finite and unit-normalized: {path}")
-    norms = np.linalg.norm(vectors, axis=1)
-    if not np.all(np.isfinite(norms)) or not np.allclose(norms, 1.0, rtol=1e-5, atol=1e-6):
-        raise ExecutionError(f"FAISS index vectors must be finite and unit-normalized: {path}")
+    total = int(raw.ntotal)
+    for start in range(0, total, 8192):
+        count = min(8192, total - start)
+        try:
+            vectors = np.asarray(raw.reconstruct_n(start, count), dtype=np.float32)
+        except Exception as exc:
+            raise ExecutionError(f"Unable to validate FAISS index vectors {path}: {exc}") from exc
+        if vectors.ndim != 2 or vectors.shape != (count, dimension):
+            raise ExecutionError(f"FAISS index stored vector shape is invalid: {path}")
+        if not np.all(np.isfinite(vectors)):
+            raise ExecutionError(f"FAISS index vectors must be finite and unit-normalized: {path}")
+        norms = np.linalg.norm(vectors, axis=1)
+        if not np.all(np.isfinite(norms)) or not np.allclose(norms, 1.0, rtol=1e-5, atol=1e-6):
+            raise ExecutionError(f"FAISS index vectors must be finite and unit-normalized: {path}")
 
 
 def _load_chunks(path: Path) -> tuple[Chunk, ...]:

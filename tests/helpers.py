@@ -15,7 +15,7 @@ class DeterministicTestEmbedder:
 
     @property
     def metadata(self) -> EmbeddingMetadata:
-        return EmbeddingMetadata(provider="test", model="deterministic-four-dim")
+        return EmbeddingMetadata(provider="test", model="deterministic-four-dim", revision="a" * 40)
 
     @property
     def dimension(self) -> int:

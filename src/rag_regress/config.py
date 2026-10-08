@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import ValidationError, model_validator
+from pydantic import Field, ValidationError, model_validator
 
 from rag_regress.errors import UserInputError
 from rag_regress.hashing import hash_canonical
@@ -31,6 +31,7 @@ class EmbeddingConfig(StrictModel):
 
     provider: Literal["sentence_transformers"]
     model: str
+    revision: str = Field(pattern=r"^[0-9a-f]{40}$")
     normalize: bool
 
 

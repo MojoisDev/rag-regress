@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from rich.text import Text
 from typer.testing import CliRunner
 
 from rag_regress import cli
@@ -324,18 +325,28 @@ def test_commands_reject_directory_read_input_before_calling_services(
         (["ingest", "--help"], ("--config",)),
         (["evaluate", "--help"], ("DATASET", "--config", "--output")),
         (["compare", "--help"], ("BASELINE", "CANDIDATE")),
+        (["sweep", "--help"], ("DATASET", "--config", "--size", "--output")),
         (["check", "--help"], ("CANDIDATE", "--baseline", "--gates")),
     ],
 )
+@pytest.mark.parametrize("color", [False, True])
 def test_command_help_lists_the_stable_documented_arguments(
-    arguments: list[str], required_terms: tuple[str, ...]
+    arguments: list[str],
+    required_terms: tuple[str, ...],
+    color: bool,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Changing a documented command argument should fail this public CLI contract test."""
-    result = runner.invoke(cli.app, arguments)
+    monkeypatch.setenv("TERM", "xterm-256color")
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setattr("typer.rich_utils.FORCE_TERMINAL", color)
+    result = runner.invoke(cli.app, arguments, color=color)
 
     assert result.exit_code == 0
+    assert ("\x1b[" in result.stdout) is color
+    output = Text.from_ansi(result.stdout).plain
     for term in required_terms:
-        assert term in result.stdout
+        assert term in output
 
 
 def _write_input_files(*names: str) -> None:
