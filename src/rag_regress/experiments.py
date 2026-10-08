@@ -149,12 +149,16 @@ def _evaluate_loaded(
 ) -> RunArtifact:
     """Measure one configuration using validated inputs and a loaded model."""
     verify_embedding_compatibility(active_embedder.metadata, bundle.manifest.embedding)
-    active_embedder.embed_query(dataset.cases[0].question)
+    for index in range(config.latency.warmup_queries):
+        evaluate_case(
+            dataset.cases[index % len(dataset.cases)], config.retrieval, bundle, active_embedder
+        )
 
     started_at = datetime.now(UTC)
     run_started = time.perf_counter()
     cases = tuple(
-        evaluate_case(case, config.retrieval, bundle, active_embedder) for case in dataset.cases
+        evaluate_case(case, config.retrieval, bundle, active_embedder, config.latency.repetitions)
+        for case in dataset.cases
     )
     return create_run_artifact(
         config=config,
@@ -173,24 +177,17 @@ def evaluate_case(
     retrieval: RetrievalConfig,
     bundle: LoadedIndexBundle,
     embedder: Embedder,
+    repetitions: int = 1,
 ) -> CaseResult:
-    """Run and measure one query against an already validated index bundle."""
-    started = time.perf_counter()
-    query = embedder.embed_query(case.question)
-    scores, positions = bundle.index.search(query, retrieval.top_k)
-    results = tuple(
-        RetrievalResult(
-            chunk_id=bundle.chunks[int(position)].id,
-            document_id=bundle.chunks[int(position)].document_id,
-            document_path=bundle.chunks[int(position)].document_path,
-            rank=rank,
-            score=float(score),
-            text=bundle.chunks[int(position)].text,
-        )
-        for rank, (score, position) in enumerate(zip(scores, positions, strict=True), start=1)
-        if retrieval.relevance_threshold is None or float(score) >= retrieval.relevance_threshold
-    )
-    retrieval_ms = (time.perf_counter() - started) * 1000
+    """Measure repeated retrievals, retaining the first ranked result for quality."""
+    samples: list[float] = []
+    results: tuple[RetrievalResult, ...] = ()
+    for repetition in range(repetitions):
+        started = time.perf_counter()
+        retrieved = _retrieve(case.question, retrieval, bundle, embedder)
+        samples.append((time.perf_counter() - started) * 1000)
+        if repetition == 0:
+            results = retrieved
     paths = [result.document_path for result in results]
     expected_paths = set(case.expected_documents)
     evidence = (
@@ -210,7 +207,30 @@ def evaluate_case(
             reciprocal_rank=reciprocal_rank(paths, expected_paths),
             evidence_hit=evidence,
         ),
-        retrieval_ms=retrieval_ms,
+        retrieval_ms=nearest_rank_percentile(samples, 0.5),
+        retrieval_samples_ms=tuple(samples),
+    )
+
+
+def _retrieve(
+    question: str,
+    retrieval: RetrievalConfig,
+    bundle: LoadedIndexBundle,
+    embedder: Embedder,
+) -> tuple[RetrievalResult, ...]:
+    query = embedder.embed_query(question)
+    scores, positions = bundle.index.search(query, retrieval.top_k)
+    return tuple(
+        RetrievalResult(
+            chunk_id=bundle.chunks[int(position)].id,
+            document_id=bundle.chunks[int(position)].document_id,
+            document_path=bundle.chunks[int(position)].document_path,
+            rank=rank,
+            score=float(score),
+            text=bundle.chunks[int(position)].text,
+        )
+        for rank, (score, position) in enumerate(zip(scores, positions, strict=True), start=1)
+        if retrieval.relevance_threshold is None or float(score) >= retrieval.relevance_threshold
     )
 
 
@@ -229,7 +249,9 @@ def create_run_artifact(
     evidence_hits = [
         case.metrics.evidence_hit for case in cases if case.metrics.evidence_hit is not None
     ]
-    latencies = [case.retrieval_ms for case in cases]
+    latencies = [
+        sample for case in cases for sample in (case.retrieval_samples_ms or (case.retrieval_ms,))
+    ]
     recall_values, hit_values, reciprocal_ranks = _exact_case_quality(cases)
     return RunArtifact(
         schema_version=1,
@@ -268,6 +290,7 @@ def pipeline_snapshot(config: PipelineConfig) -> PipelineSnapshot:
         chunking=config.chunking,
         embedding=config.embedding,
         retrieval=config.retrieval,
+        latency=config.latency,
     )
 
 

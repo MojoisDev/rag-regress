@@ -50,6 +50,27 @@ def test_sweep_writes_comparable_runs_and_loads_model_once(
     assert summary["runs"][1]["comparison"] == compare_runs(*runs).model_dump(mode="json")
 
 
+def test_sweep_applies_latency_settings_and_warms_every_variant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config, dataset = _write_fixture_inputs(tmp_path)
+    config.write_text(config.read_text() + "latency: {warmup_queries: 3, repetitions: 2}\n")
+
+    class CountingEmbedder(DeterministicTestEmbedder):
+        calls = 0
+
+        def embed_query(self, question):
+            self.calls += 1
+            return super().embed_query(question)
+
+    embedder = CountingEmbedder()
+    monkeypatch.setattr(experiments, "build_embedder", lambda config: embedder)
+    runs = experiments.sweep(config, dataset, (12, 6), tmp_path / "sweep")
+    assert embedder.calls == 14  # Each variant: three warmups plus two samples per case.
+    assert all(run.pipeline.latency.repetitions == 2 for run in runs)
+    assert all(len(case.retrieval_samples_ms) == 2 for run in runs for case in run.cases)
+
+
 @pytest.mark.parametrize("sizes", [(), (6,), (6, 6), (6, 0), (6, -1)])
 def test_sweep_rejects_invalid_sizes_before_loading_model_or_writing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sizes: tuple[int, ...]

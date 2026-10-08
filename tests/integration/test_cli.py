@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -325,6 +326,7 @@ def test_commands_reject_directory_read_input_before_calling_services(
         (["ingest", "--help"], ("--config",)),
         (["evaluate", "--help"], ("DATASET", "--config", "--output")),
         (["compare", "--help"], ("BASELINE", "CANDIDATE")),
+        (["report", "--help"], ("BASELINE", "CANDIDATE", "--output", "--gates")),
         (["sweep", "--help"], ("DATASET", "--config", "--size", "--output")),
         (["check", "--help"], ("CANDIDATE", "--baseline", "--gates")),
     ],
@@ -356,3 +358,88 @@ def _write_input_files(*names: str) -> None:
 
 def _service_must_not_run(*args: object, **kwargs: object) -> None:
     raise AssertionError("CLI read-path validation should run before the service boundary")
+
+
+@pytest.mark.parametrize("minimum", [0.4, 0.9])
+def test_report_writes_markdown_even_when_optional_gates_fail(
+    tmp_path: Path,
+    minimum: float,
+) -> None:
+    baseline, candidate, gates = _report_inputs(tmp_path, minimum)
+    output = tmp_path / "nested" / "report.md"
+    result = runner.invoke(
+        cli.app,
+        ["report", str(baseline), str(candidate), "--output", str(output), "--gates", str(gates)],
+    )
+    assert result.exit_code == 0, result.output
+    text = output.read_text(encoding="utf-8")
+    assert ("Quality gates: PASS" if minimum == 0.4 else "Quality gates: FAIL") in text
+    assert str(output) in result.stdout
+    assert "| mrr | 1.0 | 0.5 | -0.5 |" in text
+
+
+@pytest.mark.parametrize("input_name", ["baseline", "candidate", "gates"])
+@pytest.mark.parametrize("alias", ["same", "symlink", "hardlink"])
+def test_report_cannot_replace_any_input_through_an_alias(
+    tmp_path: Path,
+    input_name: str,
+    alias: str,
+) -> None:
+    baseline, candidate, gates = _report_inputs(tmp_path)
+    source = {"baseline": baseline, "candidate": candidate, "gates": gates}[input_name]
+    original = source.read_bytes()
+    output = source if alias == "same" else tmp_path / "report.md"
+    if alias == "symlink":
+        output.symlink_to(source)
+    elif alias == "hardlink":
+        os.link(source, output)
+    result = runner.invoke(
+        cli.app,
+        ["report", str(baseline), str(candidate), "--output", str(output), "--gates", str(gates)],
+    )
+    assert result.exit_code == 2
+    assert "output" in result.stderr.lower()
+    assert source.read_bytes() == original
+
+
+@pytest.mark.parametrize("problem", ["invalid", "incompatible", "failed", "bad-gates"])
+def test_report_invalid_inputs_preserve_existing_output(tmp_path: Path, problem: str) -> None:
+    baseline, candidate, gates = _report_inputs(tmp_path)
+    output = tmp_path / "report.md"
+    output.write_text("old report", encoding="utf-8")
+    if problem == "invalid":
+        candidate.write_text("not json", encoding="utf-8")
+    elif problem == "incompatible":
+        candidate.write_text(
+            make_run(dataset_fingerprint="different").model_dump_json(), encoding="utf-8"
+        )
+    elif problem == "failed":
+        candidate = candidate.rename(tmp_path / "candidate.failed.json")
+    else:
+        gates.write_text("schema_version: 1\n", encoding="utf-8")
+    result = runner.invoke(
+        cli.app,
+        ["report", str(baseline), str(candidate), "--output", str(output), "--gates", str(gates)],
+    )
+    assert result.exit_code == 2
+    assert output.read_text(encoding="utf-8") == "old report"
+
+
+def test_report_without_gates_needs_no_model_or_corpus(tmp_path: Path) -> None:
+    baseline, candidate, _ = _report_inputs(tmp_path)
+    output = tmp_path / "report.md"
+    result = runner.invoke(
+        cli.app, ["report", str(baseline), str(candidate), "--output", str(output)]
+    )
+    assert result.exit_code == 0, result.output
+    assert "Quality gates: not supplied" in output.read_text(encoding="utf-8")
+
+
+def _report_inputs(tmp_path: Path, minimum: float = 0.9) -> tuple[Path, Path, Path]:
+    baseline, candidate, gates = (
+        tmp_path / name for name in ("baseline.json", "candidate.json", "gates.yaml")
+    )
+    baseline.write_text(make_run().model_dump_json(), encoding="utf-8")
+    candidate.write_text(make_run(mrr=0.5).model_dump_json(), encoding="utf-8")
+    gates.write_text(f"schema_version: 1\nminimum:\n  mrr: {minimum}\n", encoding="utf-8")
+    return baseline, candidate, gates

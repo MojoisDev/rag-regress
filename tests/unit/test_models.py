@@ -54,3 +54,34 @@ def test_aggregate_metrics_reject_non_finite_values() -> None:
             p50_retrieval_ms=1.0,
             p95_retrieval_ms=inf,
         )
+
+
+@pytest.mark.parametrize("sample", [-1.0, nan, inf, -inf])
+def test_case_result_rejects_invalid_latency_samples(sample: float) -> None:
+    with pytest.raises(ValidationError, match="retrieval_samples_ms"):
+        CaseResult(
+            id="case",
+            question="Question?",
+            expected_documents=("guide.md",),
+            expected_text=(),
+            results=(),
+            metrics=CaseMetrics(recall_at_k=0.0, hit_at_k=0.0, reciprocal_rank=0.0),
+            retrieval_ms=1.0,
+            retrieval_samples_ms=(sample,),
+        )
+
+
+def test_case_result_accepts_latency_samples_and_legacy_omission() -> None:
+    payload = {
+        "id": "case",
+        "question": "Question?",
+        "expected_documents": ["guide.md"],
+        "expected_text": [],
+        "results": [],
+        "metrics": {"recall_at_k": 0.0, "hit_at_k": 0.0, "reciprocal_rank": 0.0},
+        "retrieval_ms": 1.0,
+    }
+    assert CaseResult.model_validate(payload).retrieval_samples_ms == ()
+    assert CaseResult.model_validate(
+        {**payload, "retrieval_samples_ms": [0.0, 1.0, 3.0]}
+    ).retrieval_samples_ms == (0.0, 1.0, 3.0)
