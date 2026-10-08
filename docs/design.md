@@ -180,6 +180,8 @@ Modules expose typed domain operations. The CLI coordinates those operations but
 - corpus and dataset fingerprints
 - full retrieval-relevant pipeline configuration, excluding absolute corpus and storage paths
 - Python, platform, dependency, and embedding-model metadata
+- observed evaluation embedding device, GPU name (CUDA only), PyTorch version,
+  and PyTorch's CUDA build version; optional fields keep older runs readable
 - start time, duration, warnings, and errors
 - aggregate metrics
 - per-case ranked results, metrics, and latency
@@ -204,6 +206,7 @@ embedding:
   model: sentence-transformers/all-MiniLM-L6-v2
   revision: 1110a243fdf4706b3f48f1d95db1a4f5529b4d41
   normalize: true
+  device: auto
 retrieval:
   metric: cosine
   top_k: 5
@@ -224,6 +227,11 @@ Rules:
   bypass revision selection. The revision is passed to the loader and recorded
   in bundle and run metadata; it participates in the index configuration fingerprint.
 - `top_k` must be positive.
+- `embedding.device` accepts `auto` (default), `cpu`, or `cuda`. Auto delegates
+  to Sentence Transformers; explicit devices must be honored, and unavailable
+  CUDA fails clearly. Explicit CPU/CUDA settings create separate index identities;
+  auto preserves pre-existing identities. FAISS remains on CPU. Runtime metadata
+  describes evaluation inference rather than the origin of a reused index.
 - Unknown keys are rejected to catch misspellings.
 
 ### Evaluation dataset

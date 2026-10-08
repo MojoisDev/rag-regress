@@ -33,6 +33,7 @@ class EmbeddingConfig(StrictModel):
     model: str
     revision: str = Field(pattern=r"^[0-9a-f]{40}$")
     normalize: bool
+    device: Literal["auto", "cpu", "cuda"] = "auto"
 
 
 class RetrievalConfig(StrictModel):
@@ -99,10 +100,14 @@ def load_pipeline_config(path: Path) -> PipelineConfig:
 
 def index_config_fingerprint(config: PipelineConfig) -> str:
     """Return the retrieval-relevant, location-independent configuration identity."""
+    embedding = config.embedding.model_dump(mode="json")
+    if config.embedding.device == "auto":
+        # Preserve existing bundle paths for configs written before device selection.
+        embedding.pop("device")
     identity = {
         "schema_version": config.schema_version,
         "chunking": config.chunking.model_dump(mode="json"),
-        "embedding": config.embedding.model_dump(mode="json"),
+        "embedding": embedding,
         "metric": config.retrieval.metric,
     }
     return hash_canonical(identity)

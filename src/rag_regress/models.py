@@ -135,6 +135,10 @@ class EnvironmentInfo(StrictModel):
     faiss_version: str
     sentence_transformers_version: str
     rag_regress_version: str
+    embedding_device: str | None = None
+    gpu_name: str | None = None
+    torch_version: str | None = None
+    cuda_version: str | None = None
 
 
 class PipelineSnapshot(StrictModel):

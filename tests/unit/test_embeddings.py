@@ -48,7 +48,7 @@ def test_sentence_transformer_adapter_normalizes_model_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FakeSentenceTransformer:
-        def __init__(self, model_name: str, *, revision: str) -> None:
+        def __init__(self, model_name: str, *, revision: str, device: str | None) -> None:
             assert revision == "a" * 40
             self.model_name = model_name
 
@@ -89,7 +89,7 @@ def test_sentence_transformer_adapter_supports_legacy_dimension_api(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class LegacySentenceTransformer:
-        def __init__(self, model_name: str, *, revision: str) -> None:
+        def __init__(self, model_name: str, *, revision: str, device: str | None) -> None:
             assert revision == "a" * 40
             self.model_name = model_name
 
@@ -149,8 +149,10 @@ def test_model_cache_skip_does_not_hide_other_execution_errors() -> None:
 
 
 @pytest.mark.model
+@pytest.mark.parametrize("device", ["auto", "cpu"])
 def test_sentence_transformer_embedder_smoke_uses_cached_model(
     monkeypatch: pytest.MonkeyPatch,
+    device: str,
 ) -> None:
     monkeypatch.setenv("HF_HUB_OFFLINE", "1")
     config = EmbeddingConfig(
@@ -158,6 +160,7 @@ def test_sentence_transformer_embedder_smoke_uses_cached_model(
         model="sentence-transformers/all-MiniLM-L6-v2",
         revision="1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
         normalize=True,
+        device=device,
     )
 
     try:
@@ -167,5 +170,8 @@ def test_sentence_transformer_embedder_smoke_uses_cached_model(
 
     vector = embedder.embed_query("How can a user reset their password?")
 
+    if device == "cpu":
+        assert embedder.runtime.device == "cpu"
+        assert embedder.runtime.gpu_name is None
     assert np.all(np.isfinite(vector))
     np.testing.assert_allclose(np.linalg.norm(vector, axis=1), np.ones(1))

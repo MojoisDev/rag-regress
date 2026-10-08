@@ -23,6 +23,16 @@ class EmbeddingMetadata:
     revision: str
 
 
+@dataclass(frozen=True, slots=True)
+class EmbeddingRuntime:
+    """Observed execution device, separate from the model's immutable identity."""
+
+    device: str
+    gpu_name: str | None
+    torch_version: str
+    cuda_version: str | None
+
+
 class Embedder(Protocol):
     """Provider-neutral source of normalized document and query vectors."""
 
@@ -82,10 +92,24 @@ class SentenceTransformerEmbedder:
         )
         try:
             import sentence_transformers
+            import torch
+
+            if config.device == "cuda" and not torch.cuda.is_available():
+                raise ExecutionError(
+                    "CUDA was requested but is unavailable; install CUDA-enabled PyTorch "
+                    "and check GPU access, or set embedding.device to cpu"
+                )
 
             self._model: Any = sentence_transformers.SentenceTransformer(
-                config.model, revision=config.revision
+                config.model,
+                revision=config.revision,
+                device=None if config.device == "auto" else config.device,
             )
+            if config.device != "auto" and self._model.device.type != config.device:
+                raise ExecutionError(
+                    f"Embedding device requested {config.device!r}, "
+                    f"but model loaded on {str(self._model.device)!r}"
+                )
             get_dimension = getattr(self._model, "get_embedding_dimension", None)
             if callable(get_dimension):
                 dimension = get_dimension()
@@ -99,6 +123,19 @@ class SentenceTransformerEmbedder:
                 f"Unable to load embedding model {config.model!r}: invalid embedding dimension"
             )
         self._dimension = dimension
+
+    @property
+    def runtime(self) -> EmbeddingRuntime:
+        """Read the device actually used by the loaded model."""
+        import torch
+
+        device = self._model.device
+        return EmbeddingRuntime(
+            device=str(device),
+            gpu_name=torch.cuda.get_device_name(device) if device.type == "cuda" else None,
+            torch_version=torch.__version__,
+            cuda_version=torch.version.cuda,
+        )
 
     @property
     def metadata(self) -> EmbeddingMetadata:

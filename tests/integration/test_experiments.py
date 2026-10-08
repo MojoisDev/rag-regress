@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from rag_regress.embeddings import EmbeddingRuntime
 from rag_regress.errors import UserInputError
 from rag_regress.experiments import create_run_artifact, evaluate, ingest
 from rag_regress.models import (
@@ -20,6 +21,41 @@ from rag_regress.models import (
 )
 from rag_regress.quality_gates import QualityGateConfig, check_quality_gates
 from tests.helpers import DeterministicTestEmbedder
+
+
+@pytest.mark.parametrize("device,gpu_name", [("cpu", None), ("cuda:0", "Test GPU")])
+def test_evaluation_records_observed_runtime_and_reads_legacy_artifacts(
+    tmp_path: Path,
+    device: str,
+    gpu_name: str | None,
+) -> None:
+    class RuntimeEmbedder(DeterministicTestEmbedder):
+        @property
+        def runtime(self) -> EmbeddingRuntime:
+            return EmbeddingRuntime(device, gpu_name, "test-torch", "test-cuda")
+
+    config_path, dataset_path = _write_fixture_inputs(tmp_path)
+    embedder = RuntimeEmbedder()
+    ingest(config_path, embedder)
+    output = tmp_path / "run.json"
+    run = evaluate(config_path, dataset_path, output, embedder)
+    payload = json.loads(output.read_text())
+    expected = {
+        "embedding_device": device,
+        "gpu_name": gpu_name,
+        "torch_version": "test-torch",
+        "cuda_version": "test-cuda",
+    }
+    for key, value in expected.items():
+        assert payload["environment"][key] == value
+        assert getattr(run.environment, key) == value
+    assert RunArtifact.model_validate(payload) == run
+    for key in expected:
+        del payload["environment"][key]
+    payload["pipeline"]["embedding"].pop("device", None)
+    legacy = RunArtifact.model_validate(payload)
+    assert legacy.environment.embedding_device is None
+    assert legacy.pipeline.embedding.device == "auto"
 
 
 def test_ingest_then_evaluate_writes_a_versioned_round_trippable_run_artifact(
@@ -37,6 +73,8 @@ def test_ingest_then_evaluate_writes_a_versioned_round_trippable_run_artifact(
     assert run.corpus_fingerprint == manifest.corpus_fingerprint
     assert run.embedding.revision == manifest.embedding.revision == "a" * 40
     assert run.pipeline.embedding.revision == "a" * 40
+    assert run.environment.embedding_device is None
+    assert run.environment.torch_version is None
     assert run.dataset_fingerprint
     assert len(run.cases) == 2
     assert run.metrics.recall_at_k == 1.0
