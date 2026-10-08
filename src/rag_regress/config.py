@@ -50,6 +50,13 @@ class StorageConfig(StrictModel):
     directory: Path
 
 
+class LatencyConfig(StrictModel):
+    """Unmeasured warm-up count and measured retrievals per evaluation case."""
+
+    warmup_queries: int = Field(default=1, ge=0, strict=True)
+    repetitions: int = Field(default=1, ge=1, strict=True)
+
+
 class PipelineConfig(StrictModel):
     """The complete version 1 pipeline configuration."""
 
@@ -59,6 +66,7 @@ class PipelineConfig(StrictModel):
     embedding: EmbeddingConfig
     retrieval: RetrievalConfig
     storage: StorageConfig
+    latency: LatencyConfig = Field(default_factory=LatencyConfig)
 
     @model_validator(mode="after")
     def validate_supported_configuration(self) -> "PipelineConfig":

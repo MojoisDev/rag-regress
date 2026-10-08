@@ -102,6 +102,19 @@ rag-regress check runs/candidate.json \
 
 The command exits with status `0` when all gates pass, `1` when a quality gate fails, and `2` for invalid input or an execution error.
 
+### Export a Markdown report
+
+```bash
+rag-regress report runs/baseline.json runs/candidate.json \
+  --output runs/comparison.md --gates quality-gates.yaml
+```
+
+The report reads saved runs, includes aggregate deltas and runtime/measurement
+context, and shows baseline/candidate ranked passages for any quality decrease.
+Gate results are optional. A successful write exits `0` even when gates fail;
+`check` remains the enforcement command. Output writes are atomic, input aliases
+are rejected, and saved text is rendered literally. Reports retain corpus content.
+
 ## 7. Project Structure
 
 ```text
@@ -207,6 +220,9 @@ embedding:
   revision: 1110a243fdf4706b3f48f1d95db1a4f5529b4d41
   normalize: true
   device: auto
+latency:
+  warmup_queries: 1
+  repetitions: 1
 retrieval:
   metric: cosine
   top_k: 5
@@ -233,6 +249,10 @@ Rules:
   auto preserves pre-existing identities. FAISS remains on CPU. Runtime metadata
   describes evaluation inference rather than the origin of a reused index.
 - Unknown keys are rejected to catch misspellings.
+- Optional `latency` settings default to one warm-up and one measurement per
+  question. Counts are strict integers, with warm-up at least zero and repetitions
+  at least one. They are recorded in pipeline snapshots and excluded from index
+  fingerprints. Each sweep variant applies them independently.
 
 ### Evaluation dataset
 
@@ -295,7 +315,9 @@ The index bundle is written to a temporary directory and renamed into place only
 4. Hydrate ranked vectors with chunk metadata.
 5. Apply the configured threshold, if present.
 6. Calculate per-case document and optional expected-text matches.
-7. Aggregate metrics and latency percentiles.
+7. Apply full retrieval warm-up and measured repetitions as configured. Keep the
+   first measured results for quality once, save all measured latency samples,
+   and aggregate quality metrics and latency percentiles.
 8. Write the complete run artifact atomically.
 
 ### Comparison
@@ -320,8 +342,12 @@ Let `R_q` be the set of expected corpus-relative document paths for question `q`
 - **Aggregate Recall@k:** arithmetic mean of per-case Recall@k
 - **Hit rate:** arithmetic mean of per-case Hit@k
 - **MRR:** arithmetic mean of reciprocal ranks
-- **Retrieval latency:** elapsed monotonic time around query embedding plus FAISS search and hydration; one unmeasured warm-up query runs before evaluating the dataset so model loading is excluded
-- **p50/p95 latency:** nearest-rank percentiles over case latencies
+- **Retrieval latency:** elapsed monotonic time around query embedding plus FAISS
+  search and hydration. Configurable full retrieval warm-up runs before measured
+  queries; warm-up and model loading are excluded. Each case records all measured
+  samples, with its `retrieval_ms` representing nearest-rank p50.
+- **p50/p95 latency:** nearest-rank percentiles over all measured samples across
+  cases. Legacy cases without samples use their existing `retrieval_ms` value.
 
 Multiple chunks from one document count once for Recall@k, while reciprocal rank uses the first relevant chunk.
 

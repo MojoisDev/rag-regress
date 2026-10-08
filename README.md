@@ -127,7 +127,8 @@ and labelled dataset:
 
 The first size is the baseline. Provide at least two distinct positive sizes,
 each greater than the config's overlap. Overlap, model revision, top-k, and score
-threshold stay fixed; the model loads once and each variant gets a warm-up query.
+threshold stay fixed; the model loads once and each variant applies the configured
+warm-up and measurement counts independently.
 The original config is unchanged, and validated index bundles are reused.
 
 The command prints quality and retrieval latency for each size and creates:
@@ -146,6 +147,58 @@ before drawing performance conclusions.
 
 This workflow is informed by the
 [chunk-size experiments in RAG Techniques](https://github.com/NirDiamant/RAG_Techniques#advanced-techniques).
+
+## Repeatable latency measurements
+
+Add an optional block to the pipeline YAML:
+
+```yaml
+latency:
+  warmup_queries: 3
+  repetitions: 10
+```
+
+Defaults are one warm-up query and one measured retrieval per question.
+`warmup_queries` must be an integer at least zero; `repetitions` must be an
+integer at least one. Warm-up runs the full retrieval path and cycles through
+dataset questions when needed. Warm-up timings are excluded from metrics.
+Both `evaluate` and every `sweep` variant apply these settings.
+
+Each question is measured serially for the configured repetitions. Its first
+measured result supplies the ranked passages and quality metrics once; repeat
+measurements affect latency only. Each case stores `retrieval_samples_ms`,
+with `retrieval_ms` representing its nearest-rank p50. Aggregate p50/p95 use
+all measured samples across questions. Settings are saved in `pipeline.latency`
+and do not change index cache paths.
+
+This release reads older runs without settings or samples, using the original
+defaults and single case latency. Older installed releases cannot read the new
+fields. Repetition reduces sensitivity to individual noisy measurements, but
+hardware, runtime, cache state, and concurrent load still affect timings.
+
+## Markdown comparison reports
+
+Export a local report from two saved runs:
+
+```bash
+.venv/bin/rag-regress report runs/baseline.json runs/candidate.json \
+  --output runs/comparison.md --gates examples/quality-gates.yaml
+```
+
+`--gates` is optional. The report includes aggregate deltas, runtime and latency
+settings, supplied-gate results, and details for questions whose recall, hit
+rate, reciprocal rank, or evidence coverage dropped. Those details contain
+both runs' full ranked passages. The existing improved/regressed/unchanged
+classification remains based on reciprocal rank, so a recall-only drop can
+appear in the details without changing that classification. Different latency
+settings are called out before interpreting timing deltas.
+
+The command reads saved artifacts without loading a model or querying a corpus.
+It writes atomically and rejects an output that aliases an input file. Successful
+report creation exits `0`, including reports showing failed gates; use `check`
+for gate enforcement. Invalid inputs or execution errors exit `2`.
+Report text is rendered literally. Sharing the Markdown also shares the saved
+questions and passage content.
 
 ## Metrics and labels
 

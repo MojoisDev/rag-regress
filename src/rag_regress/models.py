@@ -2,11 +2,11 @@
 
 from datetime import datetime
 from pathlib import PurePosixPath
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator
 
-from rag_regress.config import ChunkingConfig, EmbeddingConfig, RetrievalConfig
+from rag_regress.config import ChunkingConfig, EmbeddingConfig, LatencyConfig, RetrievalConfig
 from rag_regress.embeddings import EmbeddingMetadata
 from rag_regress.hashing import hash_canonical
 from rag_regress.validation import StrictModel
@@ -148,6 +148,7 @@ class PipelineSnapshot(StrictModel):
     chunking: ChunkingConfig
     embedding: EmbeddingConfig
     retrieval: RetrievalConfig
+    latency: LatencyConfig = Field(default_factory=LatencyConfig)
 
 
 class CaseMetrics(StrictModel):
@@ -169,6 +170,7 @@ class CaseResult(StrictModel):
     results: tuple[RetrievalResult, ...]
     metrics: CaseMetrics
     retrieval_ms: float = Field(ge=0.0)
+    retrieval_samples_ms: tuple[Annotated[float, Field(ge=0.0)], ...] = ()
 
 
 class AggregateMetrics(StrictModel):

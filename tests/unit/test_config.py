@@ -6,6 +6,38 @@ from rag_regress.config import load_pipeline_config
 from rag_regress.errors import UserInputError
 
 
+def test_latency_defaults_and_changes_do_not_change_index_identity() -> None:
+    from rag_regress.config import LatencyConfig, index_config_fingerprint
+
+    root = Path(__file__).resolve().parents[2]
+    config = load_pipeline_config(root / "examples/configs/baseline.yaml")
+    assert config.latency == LatencyConfig(warmup_queries=1, repetitions=1)
+    changed = config.model_copy(update={"latency": LatencyConfig(warmup_queries=0, repetitions=5)})
+    assert index_config_fingerprint(config) == index_config_fingerprint(changed)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"warmup_queries": -1},
+        {"repetitions": 0},
+        {"repetitions": -1},
+        {"warmup_queries": True},
+        {"repetitions": False},
+        {"warmup_queries": 1.0},
+        {"repetitions": "2"},
+        {"unknown": 1},
+    ],
+)
+def test_latency_rejects_invalid_settings(payload: dict[str, object]) -> None:
+    from pydantic import ValidationError
+
+    from rag_regress.config import LatencyConfig
+
+    with pytest.raises(ValidationError):
+        LatencyConfig.model_validate(payload)
+
+
 @pytest.mark.parametrize("revision", [None, "main", "v1", "a" * 39, "g" * 40])
 def test_embedding_revision_must_be_an_immutable_commit(revision: str | None) -> None:
     from pydantic import ValidationError

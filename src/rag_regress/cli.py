@@ -9,6 +9,7 @@ from typing import Annotated, TypeVar
 import typer
 from pydantic import ValidationError
 
+from rag_regress.artifacts import atomic_write_text
 from rag_regress.comparison import compare_runs
 from rag_regress.errors import ExecutionError, UserInputError
 from rag_regress.experiments import evaluate, ingest, sweep
@@ -21,6 +22,7 @@ from rag_regress.models import (
     RunArtifact,
 )
 from rag_regress.quality_gates import check_quality_gates, load_quality_gates
+from rag_regress.reporting import render_comparison_markdown
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -130,6 +132,34 @@ def sweep_command(
     typer.echo(f"Sweep summary: {output / 'summary.json'}")
 
 
+@app.command("report")
+def report_command(
+    ctx: typer.Context,
+    baseline: Annotated[
+        Path,
+        typer.Argument(
+            exists=True, dir_okay=False, metavar="BASELINE", help="Baseline JSON run artifact."
+        ),
+    ],
+    candidate: Annotated[
+        Path,
+        typer.Argument(
+            exists=True, dir_okay=False, metavar="CANDIDATE", help="Candidate JSON run artifact."
+        ),
+    ],
+    output: Annotated[Path, typer.Option("--output", help="Destination Markdown report.")],
+    gates: Annotated[
+        Path | None,
+        typer.Option(
+            "--gates", exists=True, dir_okay=False, help="Optional quality-gate YAML file."
+        ),
+    ] = None,
+) -> None:
+    """Write a comparison report; use check to enforce quality gates."""
+    execute(ctx, lambda: run_report(baseline, candidate, output, gates))
+    typer.echo(f"Comparison report: {output}")
+
+
 @app.command("check")
 def check_command(
     ctx: typer.Context,
@@ -202,6 +232,35 @@ def run_check(candidate_path: Path, baseline_path: Path | None, gates_path: Path
         gates=load_quality_gates(gates_path),
         baseline=baseline,
     )
+
+
+def run_report(
+    baseline_path: Path,
+    candidate_path: Path,
+    output_path: Path,
+    gates_path: Path | None = None,
+) -> None:
+    """Render compatible saved runs and atomically write a local Markdown report."""
+    inputs = [baseline_path, candidate_path]
+    if gates_path is not None:
+        inputs.append(gates_path)
+    try:
+        if any(
+            output_path.resolve() == source.resolve()
+            or (output_path.exists() and output_path.samefile(source))
+            for source in inputs
+        ):
+            raise UserInputError("Report output must not replace an input artifact or gate file")
+        baseline = _load_run_artifact(baseline_path)
+        candidate = _load_run_artifact(candidate_path)
+        gates = (
+            check_quality_gates(candidate, load_quality_gates(gates_path), baseline)
+            if gates_path is not None
+            else None
+        )
+        atomic_write_text(output_path, render_comparison_markdown(baseline, candidate, gates))
+    except OSError as exc:
+        raise UserInputError(f"Cannot write report {output_path}: {exc}") from exc
 
 
 def _load_run_artifact(path: Path) -> RunArtifact:
