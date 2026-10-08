@@ -44,6 +44,29 @@ identity and embedding metadata, so changing it selects a separate bundle.
 Existing bundles are preserved; artifacts without revision metadata must be
 regenerated before comparison or quality checks.
 
+### CPU/GPU selection and runtime metadata
+
+Set `embedding.device` to `auto` (the default), `cpu`, or `cuda` in the pipeline
+YAML. `auto` delegates device selection to Sentence Transformers, preserving
+existing behavior. `cpu` forces CPU inference. `cuda` requires accessible CUDA
+hardware and a CUDA-enabled PyTorch installation; an unavailable or mismatched
+device fails instead of falling back to CPU. FAISS search remains on CPU.
+
+Explicit `cpu` and `cuda` settings select separate index bundles. Omitted or
+explicit `auto` retains existing bundle paths. Run artifacts record
+`environment.embedding_device`, `gpu_name`, `torch_version`, and `cuda_version`
+from the evaluation embedder. The CUDA version describes the PyTorch build,
+even when inference runs on CPU. Missing runtime metadata in older artifacts
+or custom embedders is represented as `null`; this release still reads older
+run files. These fields describe query inference, not the hardware that
+originally built a reused index. Use explicit devices and fresh storage when
+validating CPU/GPU indexing parity.
+
+For CUDA installation, use the
+[official PyTorch installer](https://pytorch.org/get-started/locally/)
+with a CUDA build compatible with your GPU and driver. Device selection does
+not make latency measurements portable across machines or runtimes.
+
 ### Run the example
 
 Create a fresh environment and install the package:

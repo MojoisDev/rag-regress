@@ -23,6 +23,7 @@ from rag_regress.datasets import load_evaluation_dataset
 from rag_regress.embeddings import (
     Embedder,
     EmbeddingMetadata,
+    EmbeddingRuntime,
     build_embedder,
     verify_embedding_compatibility,
 )
@@ -163,6 +164,7 @@ def _evaluate_loaded(
         cases=cases,
         started_at=started_at,
         duration_ms=(time.perf_counter() - run_started) * 1000,
+        embedding_runtime=getattr(active_embedder, "runtime", None),
     )
 
 
@@ -221,6 +223,7 @@ def create_run_artifact(
     cases: tuple[CaseResult, ...],
     started_at: datetime,
     duration_ms: float,
+    embedding_runtime: EmbeddingRuntime | None = None,
 ) -> RunArtifact:
     """Assemble the complete versioned artifact after every case has succeeded."""
     evidence_hits = [
@@ -236,7 +239,7 @@ def create_run_artifact(
         corpus_fingerprint=corpus.fingerprint,
         dataset_fingerprint=dataset.fingerprint,
         pipeline=pipeline_snapshot(config),
-        environment=environment_info(),
+        environment=environment_info(embedding_runtime),
         embedding=embedding,
         started_at=started_at,
         duration_ms=duration_ms,
@@ -268,7 +271,7 @@ def pipeline_snapshot(config: PipelineConfig) -> PipelineSnapshot:
     )
 
 
-def environment_info() -> EnvironmentInfo:
+def environment_info(runtime: EmbeddingRuntime | None = None) -> EnvironmentInfo:
     """Record installed dependency versions without importing optional model packages."""
     return EnvironmentInfo(
         python_version=sys.version,
@@ -277,6 +280,10 @@ def environment_info() -> EnvironmentInfo:
         faiss_version=_distribution_version("faiss-cpu"),
         sentence_transformers_version=_distribution_version("sentence-transformers"),
         rag_regress_version=_distribution_version("rag-regress"),
+        embedding_device=runtime.device if runtime else None,
+        gpu_name=runtime.gpu_name if runtime else None,
+        torch_version=runtime.torch_version if runtime else None,
+        cuda_version=runtime.cuda_version if runtime else None,
     )
 
 
