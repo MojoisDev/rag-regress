@@ -1,6 +1,12 @@
 # RAG Regression Tool Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Status: historical implementation plan.** The v0.1 implementation described
+> here is present in `src/`, `tests/`, `examples/`, and CI. The original unchecked
+> steps below preserve the planning record; they are not a current backlog or
+> evidence that each historical command or commit was executed. Consult the
+> README and current source for supported configuration and development checks.
+> Subsequent fixes require immutable embedding revisions, validate stored vectors
+> in bounded batches, and validate/reuse a concurrently published index bundle.
 
 **Goal:** Build a local-first `rag-regress` CLI that creates reproducible FAISS retrieval indexes, evaluates labelled questions, compares pipeline runs, and enforces CI quality gates.
 

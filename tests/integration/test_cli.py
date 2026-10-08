@@ -324,6 +324,7 @@ def test_commands_reject_directory_read_input_before_calling_services(
         (["ingest", "--help"], ("--config",)),
         (["evaluate", "--help"], ("DATASET", "--config", "--output")),
         (["compare", "--help"], ("BASELINE", "CANDIDATE")),
+        (["sweep", "--help"], ("DATASET", "--config", "--size", "--output")),
         (["check", "--help"], ("CANDIDATE", "--baseline", "--gates")),
     ],
 )

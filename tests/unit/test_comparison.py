@@ -115,7 +115,7 @@ def make_run(
             corpus_include_patterns=("**/*.md",),
             chunking=ChunkingConfig(strategy="words", size=10, overlap=0),
             embedding=EmbeddingConfig(
-                provider="sentence_transformers", model="test", normalize=True
+                provider="sentence_transformers", model="test", revision="a" * 40, normalize=True
             ),
             retrieval=RetrievalConfig(metric="cosine", top_k=1, relevance_threshold=None),
         ),
@@ -127,7 +127,9 @@ def make_run(
             sentence_transformers_version="1",
             rag_regress_version="0.1.0",
         ),
-        embedding=EmbeddingMetadata(provider="sentence_transformers", model="test"),
+        embedding=EmbeddingMetadata(
+            provider="sentence_transformers", model="test", revision="a" * 40
+        ),
         started_at=datetime.now(UTC),
         duration_ms=1.0,
         warnings=(),

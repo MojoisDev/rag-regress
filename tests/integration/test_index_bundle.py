@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+from dataclasses import replace
 from pathlib import Path
 
 import faiss
@@ -15,8 +17,14 @@ from rag_regress.config import (
     RetrievalConfig,
     StorageConfig,
 )
-from rag_regress.errors import ExecutionError
-from rag_regress.index import build_index_bundle, bundle_path, load_index_bundle
+from rag_regress.embeddings import EmbeddingMetadata
+from rag_regress.errors import ExecutionError, UserInputError
+from rag_regress.index import (
+    _validate_stored_vectors,
+    build_index_bundle,
+    bundle_path,
+    load_index_bundle,
+)
 from rag_regress.models import Chunk, CorpusSnapshot, Document
 from tests.helpers import DeterministicTestEmbedder
 
@@ -88,6 +96,75 @@ def test_existing_invalid_bundle_is_rejected_without_overwriting(tmp_path: Path)
         build_index_bundle(config, corpus, chunks, DeterministicTestEmbedder())
 
     assert (target / "manifest.json").read_text(encoding="utf-8") == "{}"
+
+
+@pytest.mark.parametrize("winner", ["valid", "invalid", "different_revision"])
+def test_concurrent_publication_validates_winner_and_cleans_temporary_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, winner: str
+) -> None:
+    config = _config(tmp_path)
+    corpus, chunks = _corpus_and_chunks("concurrent")
+    target = bundle_path(config, corpus.fingerprint)
+    original_replace = Path.replace
+
+    def publish_competitor(source: Path, destination: Path) -> Path:
+        if source.is_dir() and destination == target:
+            shutil.copytree(source, target)
+            if winner == "invalid":
+                (target / "manifest.json").write_text("{}", encoding="utf-8")
+            elif winner == "different_revision":
+                manifest_path = target / "manifest.json"
+                payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+                payload["embedding"]["revision"] = "b" * 40
+                manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+        return original_replace(source, destination)
+
+    monkeypatch.setattr(Path, "replace", publish_competitor)
+    if winner == "valid":
+        manifest = build_index_bundle(config, corpus, chunks, DeterministicTestEmbedder())
+        assert manifest == load_index_bundle(config, corpus.fingerprint).manifest
+    elif winner == "invalid":
+        with pytest.raises(ExecutionError, match=str(target)):
+            build_index_bundle(config, corpus, chunks, DeterministicTestEmbedder())
+        assert (target / "manifest.json").read_text(encoding="utf-8") == "{}"
+    else:
+        with pytest.raises(UserInputError, match="b{40}"):
+            build_index_bundle(config, corpus, chunks, DeterministicTestEmbedder())
+        assert load_index_bundle(config, corpus.fingerprint).manifest.embedding.revision == "b" * 40
+    assert list(target.parent.glob(f".{target.name}.*.tmp")) == []
+
+
+@pytest.mark.parametrize("bad_row", [None, "nonfinite", "nonunit", "shape"])
+def test_stored_vector_validation_is_bounded_and_checks_last_batch(
+    tmp_path: Path, bad_row: str | None
+) -> None:
+    class StoredVectors:
+        ntotal = 8193
+
+        def __init__(self) -> None:
+            self.calls: list[tuple[int, int]] = []
+
+        def reconstruct_n(self, start: int, count: int) -> np.ndarray:
+            assert count <= 8192
+            self.calls.append((start, count))
+            vectors = np.zeros((count, 2), dtype=np.float32)
+            vectors[:, 0] = 1
+            if start == 8192:
+                if bad_row == "nonfinite":
+                    vectors[0, 0] = np.nan
+                elif bad_row == "nonunit":
+                    vectors[0, 0] = 2
+                elif bad_row == "shape":
+                    return vectors[:, :1]
+            return vectors
+
+    raw = StoredVectors()
+    if bad_row is None:
+        _validate_stored_vectors(raw, 2, tmp_path / "index.faiss")
+    else:
+        with pytest.raises(ExecutionError, match="shape|unit-normalized"):
+            _validate_stored_vectors(raw, 2, tmp_path / "index.faiss")
+    assert raw.calls == [(0, 8192), (8192, 1)]
 
 
 def test_existing_non_directory_bundle_target_is_invalid(tmp_path: Path) -> None:
@@ -191,12 +268,28 @@ def test_bundle_reuse_rejects_chunks_that_differ_from_fresh_derivation(
         build_index_bundle(config, corpus, changed_chunks, DeterministicTestEmbedder())
 
 
+def test_bundle_reuse_rejects_different_embedder_revision(tmp_path: Path) -> None:
+    class ChangedEmbedder(DeterministicTestEmbedder):
+        @property
+        def metadata(self) -> EmbeddingMetadata:
+            return replace(super().metadata, revision="b" * 40)
+
+    config = _config(tmp_path)
+    corpus, chunks = _corpus_and_chunks("revision-mismatch")
+    original = build_index_bundle(config, corpus, chunks, DeterministicTestEmbedder())
+    with pytest.raises(UserInputError, match="b{40}"):
+        build_index_bundle(config, corpus, chunks, ChangedEmbedder())
+    assert load_index_bundle(config, corpus.fingerprint).manifest == original
+
+
 def _config(tmp_path: Path) -> PipelineConfig:
     return PipelineConfig(
         schema_version=1,
         corpus=CorpusConfig(path=tmp_path / "corpus", include=["**/*.md"]),
         chunking=ChunkingConfig(strategy="words", size=8, overlap=0),
-        embedding=EmbeddingConfig(provider="sentence_transformers", model="test", normalize=True),
+        embedding=EmbeddingConfig(
+            provider="sentence_transformers", model="test", revision="a" * 40, normalize=True
+        ),
         retrieval=RetrievalConfig(metric="cosine", top_k=2, relevance_threshold=None),
         storage=StorageConfig(directory=tmp_path / "state"),
     )
