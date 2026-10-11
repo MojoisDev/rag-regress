@@ -4,7 +4,7 @@ Know when a change to chunking, embeddings, indexing, or retrieval makes a RAG s
 
 `rag-regress` is a local-first command-line tool for reproducible retrieval
 experiments, run-to-run diffs, and CI quality gates. It evaluates retrieval,
-not generated answers: configure a corpus and word chunking, label questions
+not generated answers: configure a corpus and word or token chunking, label questions
 with the documents that should be retrieved, and compare a candidate run with
 a baseline.
 
@@ -114,9 +114,51 @@ of at least 0.80, MRR of at least 0.70, hit rate of at least 0.80, p95
 retrieval latency no greater than 500 ms, at most one regressed case, and no
 more than a 0.05 drop in Recall@k or MRR.
 
+## Chunk by model tokens
+
+Word chunking remains the default example. To measure chunk sizes in the
+embedding model's tokens, use [the token configuration](examples/configs/tokens.yaml):
+
+```yaml
+chunking:
+  strategy: tokens
+  size: 200
+  overlap: 40
+```
+
+`ingest`, `evaluate`, and `sweep` use the tokenizer loaded with the pinned
+embedding model revision. Token chunks preserve exact slices of the normalized
+corpus text, including internal whitespace and punctuation. Their saved chunk
+table records `start_token`, `end_token`, `start_char`, and `end_char` (exclusive
+ends); token positions refer to the whole document, without special tokens.
+Overlap is measured in those original document tokens.
+
+Every emitted slice and its stripped model input are tokenized again and must
+fit both `size` and the model's
+input limit, including special tokens. Subword boundaries may make a chunk
+shorter than `size`. A window that cannot fit while retaining overlap is rejected;
+increase `size` or reduce `overlap`. The example MiniLM model accepts at most
+254 content tokens (256 total, including two special tokens).
+
+Token mode requires a fast tokenizer with usable character offsets and a finite
+model input limit and standard Transformer text preprocessing. Default prompts,
+model-level lowercasing, and custom preprocessing are unsupported. Unsupported
+models and oversized configurations fail clearly rather than silently truncating
+chunks. Word chunk IDs and existing bundles remain compatible. Token IDs also
+include the pinned model identity. Token chunking does not guarantee better
+retrieval; compare it against your baseline on the same labelled dataset.
+
+```bash
+rag-regress ingest --config examples/configs/tokens.yaml
+rag-regress evaluate examples/evals/product-support-v1.json \
+  --config examples/configs/tokens.yaml --output runs/tokens.json
+rag-regress sweep examples/evals/product-support-v1.json \
+  --config examples/configs/tokens.yaml --size 120 --size 200 --output runs/token-sweep
+```
+
 ## Compare chunk sizes
 
-Use `sweep` to build and evaluate several word chunk sizes on the same corpus
+Use `sweep` to build and evaluate several chunk sizes on the same corpus
 and labelled dataset:
 
 ```bash
@@ -235,7 +277,7 @@ metrics do not prove generated answers are correct.
 
 ## Architecture
 
-Typed modules keep input loading, corpus normalization, word chunking,
+Typed modules keep input loading, corpus normalization, word or token chunking,
 Sentence Transformer embeddings, FAISS `IndexFlatIP` retrieval, metrics,
 comparison, gates, and JSON artifacts separate. Vectors are normalized so
 inner-product search is cosine-compatible. The CLI coordinates those services
@@ -268,7 +310,7 @@ Run the offline checks before proposing a change:
 ```
 
 Contributions should preserve the v0.1 boundaries: UTF-8 `.txt`/`.md` input,
-word chunking, normalized Sentence Transformer vectors, and FAISS
+word or token chunking, normalized Sentence Transformer vectors, and FAISS
 `IndexFlatIP`. Add tests for behavior changes, keep default tests offline,
 reject unknown input fields, and document any new user-visible command or
 artifact behavior. Do not add telemetry, uploads, hosted APIs, generation,

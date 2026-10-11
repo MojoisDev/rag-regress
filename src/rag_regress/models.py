@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import PurePosixPath
 from typing import Annotated, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from rag_regress.config import ChunkingConfig, EmbeddingConfig, LatencyConfig, RetrievalConfig
 from rag_regress.embeddings import EmbeddingMetadata
@@ -30,15 +30,37 @@ class CorpusSnapshot(StrictModel):
 
 
 class Chunk(StrictModel):
-    """A deterministic word-range from a corpus document."""
+    """A deterministic word or token range from a corpus document."""
 
     id: str
     document_id: str
     document_path: str
     sequence: int
     text: str
-    start_word: int
-    end_word: int
+    start_word: int | None = None
+    end_word: int | None = None
+    start_token: int | None = Field(default=None, ge=0, strict=True)
+    end_token: int | None = Field(default=None, ge=1, strict=True)
+    start_char: int | None = Field(default=None, ge=0, strict=True)
+    end_char: int | None = Field(default=None, ge=1, strict=True)
+
+    @model_validator(mode="after")
+    def validate_boundaries(self) -> "Chunk":
+        token_bounds = (self.start_token, self.end_token, self.start_char, self.end_char)
+        if any(value is not None for value in token_bounds):
+            if any(value is None for value in token_bounds):
+                raise ValueError("token chunks require token and character boundaries")
+            assert self.start_token is not None and self.end_token is not None
+            assert self.start_char is not None and self.end_char is not None
+            if self.start_word is not None or self.end_word is not None:
+                raise ValueError("token chunks cannot contain word boundaries")
+            if self.start_token >= self.end_token or self.start_char >= self.end_char:
+                raise ValueError("chunk boundaries must be increasing")
+            if len(self.text) != self.end_char - self.start_char:
+                raise ValueError("text length must match character boundaries")
+        elif self.start_word is None or self.end_word is None:
+            raise ValueError("word chunks require word boundaries")
+        return self
 
 
 class RetrievalResult(StrictModel):

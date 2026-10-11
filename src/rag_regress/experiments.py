@@ -55,8 +55,15 @@ def ingest(config_path: Path, embedder: Embedder | None = None) -> IndexBundleMa
     """Build or reuse the deterministic index bundle for one pipeline configuration."""
     config = load_pipeline_config(config_path)
     corpus = load_corpus(config.corpus)
-    chunks = chunk_corpus(corpus, config.chunking)
-    active_embedder = embedder or build_embedder(config.embedding)
+    active_embedder = embedder
+    if config.chunking.strategy == "tokens":
+        active_embedder = active_embedder or build_embedder(config.embedding)
+    chunks = chunk_corpus(
+        corpus, config.chunking,
+        getattr(active_embedder, "tokenization", None)
+        if config.chunking.strategy == "tokens" else None,
+    )
+    active_embedder = active_embedder or build_embedder(config.embedding)
     return build_index_bundle(config, corpus, chunks, active_embedder)
 
 
@@ -105,7 +112,11 @@ def sweep(
     try:
         temporary.mkdir()
         for variant in configs:
-            chunks = chunk_corpus(corpus, variant.chunking)
+            chunks = chunk_corpus(
+                corpus, variant.chunking,
+                getattr(active_embedder, "tokenization", None)
+                if variant.chunking.strategy == "tokens" else None,
+            )
             manifest = build_index_bundle(variant, corpus, chunks, active_embedder)
             bundle = load_index_bundle(variant, corpus.fingerprint)
             run = _evaluate_loaded(variant, corpus, dataset, bundle, active_embedder)
@@ -149,6 +160,13 @@ def _evaluate_loaded(
 ) -> RunArtifact:
     """Measure one configuration using validated inputs and a loaded model."""
     verify_embedding_compatibility(active_embedder.metadata, bundle.manifest.embedding)
+    if config.chunking.strategy == "tokens":
+        tokenization = getattr(active_embedder, "tokenization", None)
+        if tokenization is None:
+            raise UserInputError("Token chunking requires the embedding model's tokenizer")
+        tokenization.validate_size(config.chunking.size)
+        if any(not tokenization.fits(chunk.text, config.chunking.size) for chunk in bundle.chunks):
+            raise UserInputError("Stored token chunks exceed the loaded model's token budget")
     for index in range(config.latency.warmup_queries):
         evaluate_case(
             dataset.cases[index % len(dataset.cases)], config.retrieval, bundle, active_embedder

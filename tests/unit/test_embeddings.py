@@ -168,6 +168,25 @@ def test_sentence_transformer_embedder_smoke_uses_cached_model(
     except ExecutionError as exc:
         _skip_if_model_not_cached(exc)
 
+    from rag_regress.chunking import chunk_corpus
+    from rag_regress.config import ChunkingConfig
+    from tests.unit.test_chunking import _corpus
+
+    tokenization = embedder.tokenization
+    assert tokenization.max_length == 256
+    tokenization.validate_size(254)
+    source = ("unaffordable multilingual punctuation! 你好世界 🙂 café\n" * 20).strip()
+    chunks = chunk_corpus(
+        _corpus(source), ChunkingConfig(strategy="tokens", size=16, overlap=3), tokenization
+    )
+    assert len(chunks) > 1
+    assert all(source[chunk.start_char : chunk.end_char] == chunk.text for chunk in chunks)
+    assert all(tokenization.fits(chunk.text, 16) for chunk in chunks)
+    assert all(
+        chunks[i + 1].start_token == chunk.end_token - 3 for i, chunk in enumerate(chunks[:-1])
+    )
+    embedder.embed_documents([chunk.text for chunk in chunks])
+
     vector = embedder.embed_query("How can a user reset their password?")
 
     if device == "cpu":

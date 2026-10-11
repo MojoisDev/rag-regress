@@ -21,9 +21,17 @@ class CorpusConfig(StrictModel):
 class ChunkingConfig(StrictModel):
     """Document chunking configuration."""
 
-    strategy: Literal["words"]
+    strategy: Literal["words", "tokens"]
     size: int
     overlap: int
+
+    @model_validator(mode="after")
+    def validate_window(self) -> "ChunkingConfig":
+        if self.size <= 0:
+            raise ValueError("chunking.size must be positive")
+        if not 0 <= self.overlap < self.size:
+            raise ValueError("chunking.overlap must satisfy 0 <= overlap < size")
+        return self
 
 
 class EmbeddingConfig(StrictModel):
@@ -73,10 +81,6 @@ class PipelineConfig(StrictModel):
         """Enforce the v0.1 constraints that span configuration fields."""
         if self.schema_version != 1:
             raise ValueError("schema_version must be 1")
-        if self.chunking.size <= 0:
-            raise ValueError("chunking.size must be positive")
-        if not 0 <= self.chunking.overlap < self.chunking.size:
-            raise ValueError("chunking.overlap must satisfy 0 <= overlap < size")
         if not self.embedding.normalize:
             raise ValueError("embedding.normalize must be true for cosine retrieval")
         if self.retrieval.top_k <= 0:
