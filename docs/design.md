@@ -38,7 +38,7 @@ A developer or small startup team building a document-grounded application who n
 ## 4. Goals
 
 - Provide deterministic document and evaluation-dataset fingerprinting.
-- Support configurable word-based chunking with validated overlap.
+- Support configurable word or model-token chunking with validated overlap.
 - Generate normalized embeddings through a small provider interface.
 - Build and query a FAISS inner-product index for cosine-compatible retrieval.
 - Evaluate labelled questions with standard information-retrieval metrics.
@@ -168,8 +168,11 @@ Modules expose typed domain operations. The CLI coordinates those operations but
 - `document_path`
 - `sequence`
 - `text`
-- `start_word`
-- `end_word`: exclusive
+- Word chunks: `start_word`, `end_word` (exclusive); unchanged IDs and serialized shape.
+- Token chunks: `start_token`, `end_token`, `start_char`, `end_char` (exclusive ends).
+  Token boundaries are positions in the whole document without special tokens;
+  character boundaries select exact normalized source slices. Word boundaries are absent.
+  IDs additionally include the pinned embedding model identity.
 
 ### RetrievalResult
 
@@ -236,7 +239,12 @@ Rules:
 - `schema_version` must equal `1`.
 - `size` must be positive.
 - `overlap` must be non-negative and smaller than `size`.
-- v0.1 accepts only `words`, `sentence_transformers`, and `cosine` for the respective fields.
+- Chunking accepts `words` or `tokens`; embedding accepts `sentence_transformers`;
+  retrieval accepts `cosine`. Token size/overlap use the pinned embedding model's tokenizer.
+  Fast character offsets, a finite model input limit, and standard Transformer text
+  preprocessing are required; default prompts, model-level lowercasing, and custom
+  preprocessing are unsupported. Reserve special tokens and re-tokenize every emitted slice to
+  prevent truncation. Unusable offsets or windows that cannot retain overlap fail.
 - `normalize` must be `true` when the metric is cosine.
 - `embedding.revision` must be a full lowercase 40-character Hugging Face commit SHA;
   branches and tags are rejected. Local model paths are unsupported because they

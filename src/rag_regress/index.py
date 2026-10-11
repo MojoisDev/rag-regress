@@ -160,7 +160,7 @@ def build_index_bundle(
         index.save(temporary / _INDEX_FILENAME)
         atomic_write_json(
             temporary / _CHUNKS_FILENAME,
-            {"chunks": [chunk.model_dump(mode="json") for chunk in chunks]},
+            {"chunks": [chunk.model_dump(mode="json", exclude_none=True) for chunk in chunks]},
         )
         manifest = IndexBundleManifest(
             schema_version=1,

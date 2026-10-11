@@ -21,7 +21,9 @@
 - Support Python 3.11 and 3.12.
 - The console entry point is exactly `rag-regress`.
 - v0.1 reads UTF-8 `.txt` and `.md` files only.
-- v0.1 supports word chunking, Sentence Transformers, normalized vectors, and FAISS `IndexFlatIP` only.
+- The original v0.1 implementation below used word chunking. Token chunking was added
+  later; see README and design.md for the current contract. Sentence Transformers,
+  normalized vectors, and FAISS `IndexFlatIP` remain the supported embedding/index stack.
 - Default tests must run without network access, Ollama, or a downloaded embedding model.
 - Unknown YAML and JSON fields must be rejected.
 - User input errors exit `2`; failed quality gates exit `1`; success exits `0`.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from importlib import import_module
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -31,6 +32,47 @@ class EmbeddingRuntime:
     gpu_name: str | None
     torch_version: str
     cuda_version: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class Tokenization:
+    """Tokenizer and input limit belonging to the loaded, pinned embedding model."""
+
+    tokenizer: Any
+    max_length: int | None
+    metadata: EmbeddingMetadata
+
+    def validate_size(self, size: int) -> None:
+        if not getattr(self.tokenizer, "is_fast", False):
+            raise UserInputError("Token chunking requires a fast tokenizer with character offsets")
+        if not isinstance(self.max_length, int) or self.max_length <= 0:
+            raise UserInputError("Token chunking requires a finite embedding model input limit")
+        limit = self.max_length - self.tokenizer.num_special_tokens_to_add(pair=False)
+        if size > limit:
+            raise UserInputError(f"chunking.size exceeds the model's {limit} content-token limit")
+
+    def encode(self, text: str, *, special: bool = False, offsets: bool = False) -> Any:
+        try:
+            return self.tokenizer(
+                text,
+                add_special_tokens=special,
+                truncation=False,
+                return_offsets_mapping=offsets,
+                verbose=False,
+            )
+        except Exception as exc:
+            raise UserInputError(f"Unable to tokenize text for token chunking: {exc}") from exc
+
+    def fits(self, text: str, size: int) -> bool:
+        assert self.max_length is not None
+        # Transformer strips input; byte-level token counts can increase after stripping.
+        stripped = text.strip()
+        candidates = (text,) if stripped == text else (text, stripped)
+        for candidate in candidates:
+            if (len(self.encode(candidate)["input_ids"]) > size
+                    or len(self.encode(candidate, special=True)["input_ids"]) > self.max_length):
+                return False
+        return True
 
 
 class Embedder(Protocol):
@@ -144,6 +186,28 @@ class SentenceTransformerEmbedder:
     @property
     def dimension(self) -> int:
         return self._dimension
+
+    @property
+    def tokenization(self) -> Tokenization:
+        """Use the loaded model's tokenizer; never resolve a separate tokenizer revision."""
+        if getattr(self._model, "default_prompt_name", None):
+            raise UserInputError("Token chunking does not support models with a default prompt")
+        tokenizer = getattr(self._model, "tokenizer", None)
+        if tokenizer is None:
+            raise UserInputError("Embedding model has no tokenizer for token chunking")
+        first_module = getattr(self._model, "_first_module", lambda: None)()
+        if getattr(first_module, "do_lower_case", False):
+            raise UserInputError(
+                "Token chunking does not support model-level lowercase preprocessing"
+            )
+        try:
+            transformer_module = import_module("sentence_transformers.base.modules.transformer")
+        except ImportError:
+            transformer_module = import_module("sentence_transformers.models")
+        if (type(first_module) is not transformer_module.Transformer
+                or getattr(first_module, "processing_kwargs", None)):
+            raise UserInputError("Token chunking requires standard Transformer text preprocessing")
+        return Tokenization(tokenizer, getattr(self._model, "max_seq_length", None), self.metadata)
 
     def embed_documents(self, texts: Sequence[str]) -> NDArray[np.float32]:
         return self._encode(texts)

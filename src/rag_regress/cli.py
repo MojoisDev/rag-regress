@@ -119,7 +119,10 @@ def sweep_command(
         typer.Option("--config", exists=True, dir_okay=False, help="Base pipeline YAML file."),
     ],
     size: Annotated[
-        list[int], typer.Option("--size", help="Chunk size in words; repeat for each variant.")
+        list[int],
+        typer.Option(
+            "--size", help="Chunk size in configured words or tokens; repeat for each variant."
+        ),
     ],
     output: Annotated[
         Path, typer.Option("--output", help="New directory for run artifacts and summary.")
