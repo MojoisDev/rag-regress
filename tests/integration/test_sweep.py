@@ -454,3 +454,14 @@ def test_grid_cli_invalid_axes_exit_two_before_model(tmp_path, monkeypatch, extr
     assert result.exit_code == 2
     assert "No such option" not in result.stderr
     assert not (tmp_path / "grid").exists()
+
+
+@pytest.mark.parametrize("sizes", [(12, 0), (12, -1)])
+def test_legacy_sweep_preserves_nonpositive_size_error(tmp_path, monkeypatch, sizes):
+    config, dataset = _write_fixture_inputs(tmp_path)
+    monkeypatch.setattr(experiments, "build_embedder", _must_not_load)
+    with pytest.raises(UserInputError) as error:
+        experiments.sweep(config, dataset, sizes, tmp_path / "sweep")
+    assert str(error.value) == (
+        "Each chunk size must be positive and greater than chunking.overlap"
+    )

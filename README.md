@@ -203,8 +203,8 @@ rag-regress sweep examples/evals/product-support-v1.json \
 ```
 
 This grid produces eight evaluations and four distinct index configurations.
-The model loads once, and each size/overlap index is built and loaded once,
-then reused across `top_k` values. Existing validated index bundles avoid
+The model loads once, and each size/overlap pair shares one evaluation bundle
+across `top_k` values. Existing validated index bundles avoid
 re-embedding documents on subsequent sweeps.
 
 Ordering follows the values as entered: size first, then overlap, then `top_k`.

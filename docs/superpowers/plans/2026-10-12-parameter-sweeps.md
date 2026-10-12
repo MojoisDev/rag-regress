@@ -140,11 +140,12 @@ rag-regress sweep examples/evals/product-support-v1.json \
 
 ## Task 4: Final Verification and Delivery
 
-- [ ] Run full suites on Python 3.11 CPU, Python 3.12 CPU, and the isolated RTX 5060 CUDA environment; cached model tests must execute rather than silently skip.
-- [ ] Run Ruff, mypy, dependency checks, and wheel/sdist builds. Build environments sequentially to avoid shared setuptools output races.
-- [ ] Run real token CPU/CUDA grids through ingest/evaluation/sweep output and report/gates. Verify recorded devices, source/token boundaries, and one embedding build per size/overlap pair. Use separate new output directories per run.
-- [ ] Request independent code review, fix actionable findings, and record meaningful mistakes in `/home/mujeeb_25/mistake.md`.
+- [x] Run full suites on Python 3.11 CPU, Python 3.12 CPU, and the isolated RTX 5060 CUDA environment; cached model tests must execute rather than silently skip.
+- [x] Run Ruff, mypy, dependency checks, and wheel/sdist builds. Build environments sequentially to avoid shared setuptools output races.
+- [x] Run real token CPU/CUDA grids through ingest/evaluation/sweep output and report/gates. Verify recorded devices, source/token boundaries, and one embedding build per size/overlap pair. Use separate new output directories per run.
+- [x] Request independent code review, fix actionable findings, and record meaningful mistakes in `/home/mujeeb_25/mistake.md`.
 - [ ] Push a feature branch and open/attach a PR with exact verification results. Wait for both Python CI jobs. Merge only when the user requests it.
+
 
 ## Success Criteria and Risks
 

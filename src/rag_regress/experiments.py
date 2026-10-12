@@ -103,6 +103,10 @@ def sweep(
     extended = overlaps is not None or top_ks is not None
     if not extended and (len(sizes) < 2 or len(set(sizes)) != len(sizes)):
         raise UserInputError("Provide at least two distinct chunk sizes")
+    if not extended and any(
+        type(size) is int and size <= config.chunking.overlap for size in sizes
+    ):
+        raise UserInputError("Each chunk size must be positive and greater than chunking.overlap")
     overlap_values = (config.chunking.overlap,) if overlaps is None else overlaps
     top_k_values = (config.retrieval.top_k,) if top_ks is None else top_ks
     for label, values, minimum in (
