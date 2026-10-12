@@ -70,3 +70,36 @@ def test_evaluate_rechecks_loaded_model_limit(tmp_path):
     with pytest.raises(UserInputError, match="content-token limit"):
         experiments.evaluate(config, dataset, tmp_path / "run.json", SmallerLimit())
     assert not (tmp_path / "run.json").exists()
+
+
+def test_token_grid_preflights_all_sizes_before_any_index(tmp_path, monkeypatch):
+    config, dataset = token_inputs(tmp_path)
+
+    class MustNotEmbed(TokenEmbedder):
+        def embed_documents(self, texts):
+            raise AssertionError("preflight must reject before embedding any documents")
+
+    monkeypatch.setattr(experiments, "build_embedder", lambda config: MustNotEmbed())
+    with pytest.raises(UserInputError, match="content-token limit"):
+        experiments.sweep(config, dataset, (4, 7), tmp_path / "grid", top_ks=(1, 2))
+    assert not (tmp_path / "state").exists()
+    assert not (tmp_path / "grid").exists()
+
+
+def test_token_grid_uses_source_boundaries_and_overlap(tmp_path, monkeypatch):
+    config, dataset = token_inputs(tmp_path)
+    monkeypatch.setattr(experiments, "build_embedder", lambda config: TokenEmbedder())
+    runs = experiments.sweep(config, dataset, (4, 6), tmp_path / "grid", overlaps=(0, 1))
+    assert [(r.pipeline.chunking.size, r.pipeline.chunking.overlap) for r in runs] == [
+        (4, 0),
+        (4, 1),
+        (6, 0),
+        (6, 1),
+    ]
+    base = load_pipeline_config(config)
+    for run in runs:
+        variant = base.model_copy(update={"chunking": run.pipeline.chunking})
+        bundle = load_index_bundle(variant, run.corpus_fingerprint)
+        for chunk in bundle.chunks:
+            source = (tmp_path / "corpus" / chunk.document_path).read_text()
+            assert source[chunk.start_char : chunk.end_char] == chunk.text
