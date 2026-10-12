@@ -456,3 +456,32 @@ The release is complete when a clean checkout can:
 ## 19. Post-v0.1 Direction
 
 Subsequent releases may add configuration matrices, GitHub Actions annotations, HTML comparison reports, additional chunkers, hybrid retrieval, reranking, framework adapters, and citation-integrity evaluation. Answer generation will use a provider-neutral interface with Ollama as the first adapter. These additions must preserve the deterministic retrieval baseline rather than turning the project into a general-purpose RAG framework.
+
+
+## Parameter sweeps
+
+`sweep` evaluates an ordered Cartesian grid of chunk sizes, overlaps, and
+retrieval `top_k` values. `--size SIZE` remains required; optional repeatable
+`--overlap OVERLAP` and `--top-k TOP_K` use config defaults when omitted.
+Require at least two combinations, reject duplicate axis values and invalid
+size/overlap pairs before model loading, and preflight every selected token
+size against the loaded model before index writes. Invalid pairs are rejected
+rather than silently skipped.
+
+Size is the outer axis, overlap the middle axis, and `top_k` the inner axis;
+input order determines the first combination, which is the baseline. The
+model loads once. Each size/overlap pair produces one validated, loaded bundle,
+shared across result counts because `top_k` is excluded from index identity.
+Warmups and measurements run independently for each evaluated combination.
+
+Legacy size-only sweeps retain summary schema version 1 and `size-N.json` files.
+Supplying either new axis selects summary version 2, with `baseline` containing
+`size`, `overlap`, and `top_k`; rows also contain those three values, chunk count,
+relative artifact filename, metrics, and full baseline comparison. Names include
+all values: `size-N-overlap-M-top-k-K.json`. Ordinary run artifact schema stays
+version 1, supporting existing comparison, reporting, and quality gates.
+
+Output publication remains atomic. An execution failure removes temporary
+output; completed cache bundles can remain. Grids grow multiplicatively, and
+quality/latency comparisons across result counts express configuration tradeoffs.
+No automatic winner, model sweep, parallel executor, or new config fields are added.

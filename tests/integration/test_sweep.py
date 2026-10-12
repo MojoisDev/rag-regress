@@ -387,3 +387,70 @@ def test_grid_rejects_non_integer_axis_values(tmp_path, monkeypatch, axes):
     with pytest.raises(UserInputError, match="integer"):
         experiments.sweep(config, dataset, (12, 6), tmp_path / "grid", **axes)
     assert not (tmp_path / "state").exists()
+
+
+def test_grid_cli_reports_all_axes_and_variant_count(tmp_path, monkeypatch):
+    config, dataset = _write_fixture_inputs(tmp_path)
+    monkeypatch.setattr(experiments, "build_embedder", lambda config: DeterministicTestEmbedder())
+    output = tmp_path / "grid"
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "sweep",
+            str(dataset),
+            "--config",
+            str(config),
+            "--size",
+            "12",
+            "--size",
+            "6",
+            "--overlap",
+            "0",
+            "--overlap",
+            "1",
+            "--top-k",
+            "2",
+            "--top-k",
+            "1",
+            "--output",
+            str(output),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.startswith("Planned variants: 8\n")
+    assert "size=12 overlap=0 top_k=2:" in result.stdout
+    assert "size=6 overlap=1 top_k=1:" in result.stdout
+    assert len(json.loads((output / "summary.json").read_text())["runs"]) == 8
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        ["--overlap", "6"],
+        ["--top-k", "0"],
+        ["--overlap", "0", "--overlap", "0"],
+        ["--top-k", "2", "--top-k", "2"],
+    ],
+)
+def test_grid_cli_invalid_axes_exit_two_before_model(tmp_path, monkeypatch, extra):
+    config, dataset = _write_fixture_inputs(tmp_path)
+    monkeypatch.setattr(experiments, "build_embedder", _must_not_load)
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "sweep",
+            str(dataset),
+            "--config",
+            str(config),
+            "--size",
+            "12",
+            "--size",
+            "6",
+            "--output",
+            str(tmp_path / "grid"),
+            *extra,
+        ],
+    )
+    assert result.exit_code == 2
+    assert "No such option" not in result.stderr
+    assert not (tmp_path / "grid").exists()

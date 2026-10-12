@@ -47,7 +47,7 @@ No changes to package exports or PipelineConfig fields are required. Reuse index
 
 ## Task 1: Validated Grid and Grouped Evaluation
 
-- [ ] Add a failing integration test to `test_sweep.py` using the existing fixture writer and deterministic embedder:
+- [x] Add a failing integration test to `test_sweep.py` using the existing fixture writer and deterministic embedder:
 
 ```python
 def test_grid_reuses_indexes(tmp_path, monkeypatch):
@@ -78,13 +78,13 @@ def test_grid_reuses_indexes(tmp_path, monkeypatch):
     assert embedder.document_calls == 4
 ```
 
-- [ ] Run `.venv/bin/python -m pytest tests/integration/test_sweep.py -q`; new test must fail because new keyword arguments are unsupported.
-- [ ] Extend the service signature with the two keyword-only axes. Validate values and grid length before loading inputs/model. Construct ChunkingConfig and RetrievalConfig variants through validation, not unchecked model_copy values.
-- [ ] Use nested size/overlap/top_k loops. Chunk, build/reuse, and load once per size/overlap pair; only evaluate inside the top_k loop. Reuse the current warmup/repetition implementation for every evaluation.
-- [ ] Add parametrized rejection tests for overlaps `()`, `(-1,)`, `(0, 0)`, `(6,)` with sizes `(12, 6)`; top_ks `()`, `(0,)`, `(-1,)`, `(2, 2)`; and a one-variant extended grid. Patch build_embedder to raise AssertionError if called and assert no state/output directory exists.
-- [ ] Test a single-size/multiple-top_k sweep, repeated sweep cache reuse, and distinct configurations sharing the same index fingerprint only when top_k changes.
-- [ ] In token tests, use the existing TokenEmbedder limit of 6 content tokens: an extended grid containing sizes `(4, 7)` must fail before embedding documents or creating index/output directories.
-- [ ] Run focused word/token integration suites and all existing size-only sweep tests.
+- [x] Run `.venv/bin/python -m pytest tests/integration/test_sweep.py -q`; new test must fail because new keyword arguments are unsupported.
+- [x] Extend the service signature with the two keyword-only axes. Validate values and grid length before loading inputs/model. Construct ChunkingConfig and RetrievalConfig variants through validation, not unchecked model_copy values.
+- [x] Use nested size/overlap/top_k loops. Chunk, build/reuse, and load once per size/overlap pair; only evaluate inside the top_k loop. Reuse the current warmup/repetition implementation for every evaluation.
+- [x] Add parametrized rejection tests for overlaps `()`, `(-1,)`, `(0, 0)`, `(6,)` with sizes `(12, 6)`; top_ks `()`, `(0,)`, `(-1,)`, `(2, 2)`; and a one-variant extended grid. Patch build_embedder to raise AssertionError if called and assert no state/output directory exists.
+- [x] Test a single-size/multiple-top_k sweep, repeated sweep cache reuse, and distinct configurations sharing the same index fingerprint only when top_k changes.
+- [x] In token tests, use the existing TokenEmbedder limit of 6 content tokens: an extended grid containing sizes `(4, 7)` must fail before embedding documents or creating index/output directories.
+- [x] Run focused word/token integration suites and all existing size-only sweep tests.
 
 ## Task 2: Output Contract and Failure Safety
 
@@ -112,19 +112,19 @@ Extended output uses summary schema version 2. Legacy size-only output stays ver
 
 The schema illustration omits metric keys for readability; actual metrics are `run.metrics.model_dump(mode="json")`. Every non-baseline comparison is `compare_runs(runs[0], run).model_dump(mode="json")`.
 
-- [ ] Before changing output logic, add failing assertions to the grid test for version 2, baseline tuple, eight distinct filenames, JSON roundtrips, and exact compare_runs results.
-- [ ] Generate extended filenames with all three values. Preserve `size-N.json` and version-1 fields when both new axes are omitted.
-- [ ] Preserve atomic temporary-directory publication and cleanup. Completed index bundles may remain after execution failures, as in current sweeps.
-- [ ] Test a late query failure across top_k variants, existing output directory/symlink refusal, untouched input config bytes, and temporary-directory cleanup.
-- [ ] Verify every extended run works with existing compare/report/check services; use permissive gates so this tests artifact compatibility rather than fixture performance.
-- [ ] Run focused tests, then commit service/output changes with their tests.
+- [x] Before changing output logic, add failing assertions to the grid test for version 2, baseline tuple, eight distinct filenames, JSON roundtrips, and exact compare_runs results.
+- [x] Generate extended filenames with all three values. Preserve `size-N.json` and version-1 fields when both new axes are omitted.
+- [x] Preserve atomic temporary-directory publication and cleanup. Completed index bundles may remain after execution failures, as in current sweeps.
+- [x] Test a late query failure across top_k variants, existing output directory/symlink refusal, untouched input config bytes, and temporary-directory cleanup.
+- [x] Verify every extended run works with existing compare/report/check services; use permissive gates so this tests artifact compatibility rather than fixture performance.
+- [x] Run focused tests, then commit service/output changes with their tests.
 
 ## Task 3: CLI and Documentation
 
-- [ ] Write failing CliRunner tests for repeatable `--overlap` and `--top-k`, the eight-run example, invalid-grid exit code 2, and labels containing all parameters.
-- [ ] Add optional repeatable integer flags. Use explicit uppercase metavars `SIZE`, `OVERLAP`, `TOP_K`; normalize ANSI help text with the existing Rich test pattern.
-- [ ] Print the planned variant count before evaluation and the parameter tuple plus existing quality/latency metrics for each result.
-- [ ] Document the following command, baseline `(120,20,3)`, eight evaluations, and four distinct index configurations:
+- [x] Write failing CliRunner tests for repeatable `--overlap` and `--top-k`, the eight-run example, invalid-grid exit code 2, and labels containing all parameters.
+- [x] Add optional repeatable integer flags. Use explicit uppercase metavars `SIZE`, `OVERLAP`, `TOP_K`; normalize ANSI help text with the existing Rich test pattern.
+- [x] Print the planned variant count before evaluation and the parameter tuple plus existing quality/latency metrics for each result.
+- [x] Document the following command, baseline `(120,20,3)`, eight evaluations, and four distinct index configurations:
 
 ```bash
 rag-regress sweep examples/evals/product-support-v1.json \
@@ -135,8 +135,8 @@ rag-regress sweep examples/evals/product-support-v1.json \
   --output runs/parameter-grid
 ```
 
-- [ ] Explain that larger top_k changes retrieval context and metrics, latency depends on warmup/repetitions and hardware, and combinations grow multiplicatively. Document omitted-axis defaults, invalid-grid rejection, and both summary versions.
-- [ ] Run CLI tests in plain and forced-color environments, then commit CLI/docs changes.
+- [x] Explain that larger top_k changes retrieval context and metrics, latency depends on warmup/repetitions and hardware, and combinations grow multiplicatively. Document omitted-axis defaults, invalid-grid rejection, and both summary versions.
+- [x] Run CLI tests in plain and forced-color environments, then commit CLI/docs changes.
 
 ## Task 4: Final Verification and Delivery
 
