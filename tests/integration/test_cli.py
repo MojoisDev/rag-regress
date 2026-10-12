@@ -327,7 +327,20 @@ def test_commands_reject_directory_read_input_before_calling_services(
         (["evaluate", "--help"], ("DATASET", "--config", "--output")),
         (["compare", "--help"], ("BASELINE", "CANDIDATE")),
         (["report", "--help"], ("BASELINE", "CANDIDATE", "--output", "--gates")),
-        (["sweep", "--help"], ("DATASET", "--config", "--size", "--output")),
+        (
+            ["sweep", "--help"],
+            (
+                "DATASET",
+                "--config",
+                "--size",
+                "SIZE",
+                "--overlap",
+                "OVERLAP",
+                "--top-k",
+                "TOP_K",
+                "--output",
+            ),
+        ),
         (["check", "--help"], ("CANDIDATE", "--baseline", "--gates")),
     ],
 )

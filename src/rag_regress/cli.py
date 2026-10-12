@@ -121,17 +121,42 @@ def sweep_command(
     size: Annotated[
         list[int],
         typer.Option(
-            "--size", help="Chunk size in configured words or tokens; repeat for each variant."
+            "--size", metavar="SIZE",
+            help="Chunk size in configured words or tokens; repeat for each variant."
         ),
     ],
     output: Annotated[
         Path, typer.Option("--output", help="New directory for run artifacts and summary.")
     ],
+    overlap: Annotated[
+        list[int] | None,
+        typer.Option(
+            "--overlap", metavar="OVERLAP", help="Repeat overlap values; defaults to config."
+        ),
+    ] = None,
+    top_k: Annotated[
+        list[int] | None,
+        typer.Option("--top-k", metavar="TOP_K", help="Repeat result counts; defaults to config."),
+    ] = None,
 ) -> None:
-    """Build and evaluate chunk sizes, using the first SIZE as the baseline."""
-    runs = execute(ctx, lambda: sweep(config, dataset, tuple(size), output))
+    """Evaluate a parameter grid; the first combination is the baseline."""
+    extended = overlap is not None or top_k is not None
+    if extended:
+        count = len(size) * (len(overlap) if overlap is not None else 1)
+        count *= len(top_k) if top_k is not None else 1
+        typer.echo(f"Planned variants: {count}")
+    runs = execute(ctx, lambda: sweep(
+        config, dataset, tuple(size), output,
+        overlaps=tuple(overlap) if overlap is not None else None,
+        top_ks=tuple(top_k) if top_k is not None else None,
+    ))
     for run in runs:
-        typer.echo(f"size={run.pipeline.chunking.size}: {_format_aggregate_metrics(run)}")
+        label = f"size={run.pipeline.chunking.size}"
+        if extended:
+            label += (
+                f" overlap={run.pipeline.chunking.overlap} top_k={run.pipeline.retrieval.top_k}"
+            )
+        typer.echo(f"{label}: {_format_aggregate_metrics(run)}")
     typer.echo(f"Sweep summary: {output / 'summary.json'}")
 
 

@@ -17,7 +17,12 @@ from rag_regress import __version__
 from rag_regress.artifacts import atomic_write_json
 from rag_regress.chunking import chunk_corpus
 from rag_regress.comparison import compare_runs
-from rag_regress.config import PipelineConfig, RetrievalConfig, load_pipeline_config
+from rag_regress.config import (
+    ChunkingConfig,
+    PipelineConfig,
+    RetrievalConfig,
+    load_pipeline_config,
+)
 from rag_regress.corpus import load_corpus
 from rag_regress.datasets import load_evaluation_dataset
 from rag_regress.embeddings import (
@@ -89,61 +94,97 @@ def sweep(
     dataset_path: Path,
     sizes: tuple[int, ...],
     output_directory: Path,
+    *,
+    overlaps: tuple[int, ...] | None = None,
+    top_ks: tuple[int, ...] | None = None,
 ) -> tuple[RunArtifact, ...]:
-    """Compare chunk sizes on one corpus/dataset and publish a complete experiment."""
+    """Evaluate an ordered parameter grid, sharing indexes across top-k values."""
     config = load_pipeline_config(config_path)
-    if len(sizes) < 2 or len(set(sizes)) != len(sizes):
+    extended = overlaps is not None or top_ks is not None
+    if not extended and (len(sizes) < 2 or len(set(sizes)) != len(sizes)):
         raise UserInputError("Provide at least two distinct chunk sizes")
-    if any(size <= config.chunking.overlap or size <= 0 for size in sizes):
+    if not extended and any(
+        type(size) is int and size <= config.chunking.overlap for size in sizes
+    ):
         raise UserInputError("Each chunk size must be positive and greater than chunking.overlap")
+    overlap_values = (config.chunking.overlap,) if overlaps is None else overlaps
+    top_k_values = (config.retrieval.top_k,) if top_ks is None else top_ks
+    for label, values, minimum in (
+        ("chunk sizes", sizes, 1), ("overlaps", overlap_values, 0),
+        ("top_k values", top_k_values, 1),
+    ):
+        if not values or any(type(value) is not int or value < minimum for value in values):
+            raise UserInputError(f"Provide non-empty {label} with integer values >= {minimum}")
+        if len(set(values)) != len(values):
+            raise UserInputError(f"Provide distinct {label}")
+    if any(size <= overlap for size in sizes for overlap in overlap_values):
+        raise UserInputError("Each chunk size must be positive and greater than chunking.overlap")
+    if len(sizes) * len(overlap_values) * len(top_k_values) < 2:
+        raise UserInputError("Provide at least two distinct parameter combinations")
     if os.path.lexists(output_directory):
         raise UserInputError(f"Sweep output already exists: {output_directory}")
-    configs = tuple(
-        config.model_copy(update={"chunking": config.chunking.model_copy(update={"size": size})})
-        for size in sizes
+    chunkings = tuple(
+        ChunkingConfig(strategy=config.chunking.strategy, size=size, overlap=overlap)
+        for size in sizes for overlap in overlap_values
+    )
+    retrievals = tuple(
+        RetrievalConfig.model_validate(config.retrieval.model_dump() | {"top_k": top_k})
+        for top_k in top_k_values
     )
     corpus = load_corpus(config.corpus)
     dataset = load_evaluation_dataset(dataset_path, corpus)
     active_embedder = build_embedder(config.embedding)
+    tokenization = None
+    if config.chunking.strategy == "tokens":
+        tokenization = getattr(active_embedder, "tokenization", None)
+        if tokenization is None:
+            raise UserInputError("Token chunking requires the embedding model's tokenizer")
+        for size in sizes:
+            tokenization.validate_size(size)
     output_directory.parent.mkdir(parents=True, exist_ok=True)
     temporary = output_directory.with_name(f".{output_directory.name}.{uuid.uuid4().hex}.tmp")
     runs: list[RunArtifact] = []
     rows: list[dict[str, object]] = []
     try:
         temporary.mkdir()
-        for variant in configs:
-            chunks = chunk_corpus(
-                corpus, variant.chunking,
-                getattr(active_embedder, "tokenization", None)
-                if variant.chunking.strategy == "tokens" else None,
-            )
-            manifest = build_index_bundle(variant, corpus, chunks, active_embedder)
-            bundle = load_index_bundle(variant, corpus.fingerprint)
-            run = _evaluate_loaded(variant, corpus, dataset, bundle, active_embedder)
-            filename = f"size-{variant.chunking.size}.json"
-            atomic_write_json(temporary / filename, run.model_dump(mode="json"))
-            rows.append(
-                {
-                    "size": variant.chunking.size,
+        for chunking in chunkings:
+            indexed_config = config.model_copy(update={"chunking": chunking})
+            chunks = chunk_corpus(corpus, chunking, tokenization)
+            manifest = build_index_bundle(indexed_config, corpus, chunks, active_embedder)
+            bundle = load_index_bundle(indexed_config, corpus.fingerprint)
+            for retrieval in retrievals:
+                variant = indexed_config.model_copy(update={"retrieval": retrieval})
+                run = _evaluate_loaded(variant, corpus, dataset, bundle, active_embedder)
+                filename = (
+                    f"size-{chunking.size}-overlap-{chunking.overlap}-top-k-{retrieval.top_k}.json"
+                    if extended else f"size-{chunking.size}.json"
+                )
+                atomic_write_json(temporary / filename, run.model_dump(mode="json"))
+                row: dict[str, object] = {
+                    "size": chunking.size,
                     "chunk_count": manifest.chunk_count,
                     "artifact": filename,
                     "metrics": run.metrics.model_dump(mode="json"),
                     "comparison": compare_runs(runs[0], run).model_dump(mode="json")
-                    if runs
-                    else None,
+                    if runs else None,
                 }
-            )
-            runs.append(run)
-        atomic_write_json(
-            temporary / "summary.json",
-            {
-                "schema_version": 1,
-                "baseline_size": sizes[0],
-                "corpus_fingerprint": corpus.fingerprint,
-                "dataset_fingerprint": dataset.fingerprint,
-                "runs": rows,
-            },
-        )
+                if extended:
+                    row.update(overlap=chunking.overlap, top_k=retrieval.top_k)
+                rows.append(row)
+                runs.append(run)
+        summary: dict[str, object] = {
+            "schema_version": 2 if extended else 1,
+            "corpus_fingerprint": corpus.fingerprint,
+            "dataset_fingerprint": dataset.fingerprint,
+            "runs": rows,
+        }
+        if extended:
+            summary["baseline"] = {
+                "size": sizes[0], "overlap": overlap_values[0], "top_k": top_k_values[0],
+            }
+        else:
+            summary["baseline_size"] = sizes[0]
+        atomic_write_json(temporary / "summary.json", summary)
         temporary.replace(output_directory)
     finally:
         if temporary.exists():

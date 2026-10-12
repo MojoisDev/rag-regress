@@ -187,6 +187,52 @@ completed index bundles. The sweep does not automatically select a winner:
 review quality, evidence coverage, and latency together, and repeat measurements
 before drawing performance conclusions.
 
+### Compare overlap and result count
+
+Add repeatable `--overlap` and `--top-k` options to evaluate all selected
+combinations. Sizes and overlaps use the configured word or token units;
+`top_k` is the maximum number of retrieved chunks per question.
+
+```bash
+rag-regress sweep examples/evals/product-support-v1.json \
+  --config examples/configs/tokens.yaml \
+  --size 120 --size 200 \
+  --overlap 20 --overlap 40 \
+  --top-k 3 --top-k 5 \
+  --output runs/parameter-grid
+```
+
+This grid produces eight evaluations and four distinct index configurations.
+The model loads once, and each size/overlap pair shares one evaluation bundle
+across `top_k` values. Existing validated index bundles avoid
+re-embedding documents on subsequent sweeps.
+
+Ordering follows the values as entered: size first, then overlap, then `top_k`.
+The first combination is the baseline: `(120, 20, 3)` in this example.
+Omitted overlap or `top_k` options use the config value. You may provide one
+size when another axis produces multiple variants; `--size` is required and
+the complete grid must have at least two combinations. Duplicate values,
+nonpositive sizes/result counts, negative overlaps, and any overlap greater
+than or equal to a selected size are rejected before loading the model.
+Token sizes are checked against the loaded model's budget before writing indexes.
+
+When either new option is supplied, output uses summary schema version `2`:
+
+- `baseline`: an object with `size`, `overlap`, and `top_k`.
+- `corpus_fingerprint`, `dataset_fingerprint`, and `runs`.
+- Each row adds `overlap` and `top_k` to the existing size, chunk count, artifact,
+  metrics, and baseline comparison fields.
+- Artifacts use names such as `size-120-overlap-20-top-k-3.json`, preventing
+  different combinations from overwriting each other. They remain ordinary
+  run artifacts usable with `compare`, `report`, and `check`.
+
+Size-only commands retain summary version `1` and `size-N.json` filenames.
+Both modes publish output only after every evaluation succeeds. Runtime grows
+with the product of axis lengths and measurement repetitions. More retrieved
+chunks may improve quality metrics while increasing latency and downstream
+context size; evaluate those tradeoffs on your labels. The sweep reports results
+without choosing a winner automatically.
+
 This workflow is informed by the
 [chunk-size experiments in RAG Techniques](https://github.com/NirDiamant/RAG_Techniques#advanced-techniques).
 
