@@ -114,6 +114,47 @@ of at least 0.80, MRR of at least 0.70, hit rate of at least 0.80, p95
 retrieval latency no greater than 500 ms, at most one regressed case, and no
 more than a 0.05 drop in Recall@k or MRR.
 
+## GitHub Actions annotations
+
+Add `--github-actions` to `check` after generating or downloading your saved runs:
+
+```yaml
+- name: Check retrieval quality
+  run: >-
+    rag-regress check runs/candidate.json
+    --baseline runs/baseline.json
+    --gates examples/quality-gates.yaml
+    --github-actions
+- name: Retain evaluation runs
+  if: always()
+  uses: actions/upload-artifact@v4
+  with:
+    name: retrieval-runs
+    path: runs/*.json
+```
+
+This uses GitHub's workflow commands; no GitHub token or additional dependency is
+needed. Failed gates emit error annotations. Cases with a decrease in recall,
+hit rate, reciprocal rank, or evidence hit emit warnings, including the baseline
+and candidate values. A warning alone does not fail the step; configured gates
+determine success. This definition is broader than the reciprocal-rank-only
+classification used by `compare` and the `maximum.regressed_cases` gate.
+
+When `GITHUB_STEP_SUMMARY` is set, the command appends aggregate metric comparisons,
+every failed gate, and decreased case IDs to the Actions job summary, including
+when gates fail. Questions and retrieved passages are excluded. Without a baseline,
+only candidate metrics and absolute gate results are available. Without the summary
+environment variable, annotations still print and no summary file is written.
+
+To fit GitHub's display limits, each invocation emits at most ten warnings and ten
+errors, with notices for omitted annotations. The summary lists up to 100 decreased
+cases, truncates IDs longer than 500 characters, and reports omitted counts; saved
+JSON runs retain complete results. Workflow command data and Markdown case IDs are
+escaped. Case IDs are still published to CI logs and the summary, so avoid secrets
+in IDs. A summary write error or an append exceeding GitHub's 1 MiB per-step limit
+exits `2`; otherwise the existing exit codes remain `0` for passing gates and `1`
+for failing gates. A normal `check` without this flag is unchanged.
+
 ## Chunk by model tokens
 
 Word chunking remains the default example. To measure chunk sizes in the

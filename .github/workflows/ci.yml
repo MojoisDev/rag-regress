@@ -21,6 +21,27 @@ jobs:
       - run: ruff check src tests
       - run: mypy src
       - run: pytest -m "not model" -q
+      - name: Smoke-test Actions reporting with synthetic runs
+        if: matrix.python-version == '3.12'
+        run: |
+          python - <<'PY'
+          import subprocess
+          from pathlib import Path
+          from tempfile import TemporaryDirectory
+          from tests.unit.test_comparison import make_run
+
+          with TemporaryDirectory() as directory:
+              root = Path(directory)
+              (root / "baseline.json").write_text(make_run().model_dump_json())
+              candidate = make_run(mrr=0.5, case_reciprocal_ranks={"case": 0.5})
+              (root / "candidate.json").write_text(candidate.model_dump_json())
+              (root / "gates.yaml").write_text("schema_version: 1\nminimum: {mrr: 0}\n")
+              subprocess.run([
+                  "rag-regress", "check", str(root / "candidate.json"),
+                  "--baseline", str(root / "baseline.json"),
+                  "--gates", str(root / "gates.yaml"), "--github-actions",
+              ], check=True)
+          PY
       - run: python -m build
       - uses: actions/upload-artifact@v4
         if: matrix.python-version == '3.12'
