@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, TypeVar
@@ -13,6 +14,11 @@ from rag_regress.artifacts import atomic_write_text
 from rag_regress.comparison import compare_runs
 from rag_regress.errors import ExecutionError, UserInputError
 from rag_regress.experiments import evaluate, ingest, sweep
+from rag_regress.github_actions import (
+    escape_workflow_data,
+    render_actions_annotations,
+    render_actions_summary,
+)
 from rag_regress.models import (
     ComparisonReport,
     GateFailure,
@@ -208,9 +214,20 @@ def check_command(
             help="Baseline JSON run artifact for relative gates.",
         ),
     ] = None,
+    github_actions: Annotated[
+        bool,
+        typer.Option("--github-actions", help="Emit GitHub annotations and append a job summary."),
+    ] = False,
 ) -> None:
     """Check CANDIDATE against quality GATES."""
-    report = execute(ctx, lambda: run_check(candidate, baseline, gates))
+    if github_actions:
+        report, annotations = execute(
+            ctx, lambda: run_actions_check(candidate, baseline, gates), github_actions=True
+        )
+        for annotation in annotations:
+            typer.echo(annotation)
+    else:
+        report = execute(ctx, lambda: run_check(candidate, baseline, gates))
     if report.passed:
         typer.echo("PASS: all quality gates passed")
         return
@@ -220,19 +237,27 @@ def check_command(
     raise typer.Exit(1)
 
 
-def execute(ctx: typer.Context, operation: Callable[[], _Result]) -> _Result:
+def execute(
+    ctx: typer.Context,
+    operation: Callable[[], _Result],
+    *,
+    github_actions: bool = False,
+) -> _Result:
     """Translate known service failures into the documented user-error exit code."""
     try:
         return operation()
     except (UserInputError, ExecutionError) as exc:
-        typer.echo(f"Error: {exc}", err=True)
+        message = f"Error: {exc}"
+        typer.echo(
+            f"::error::{escape_workflow_data(message)}" if github_actions else message, err=True
+        )
         raise typer.Exit(2) from exc
     except Exception as exc:
         if _debug_enabled(ctx):
             raise
+        message = f"Error: unexpected failure: {exc}. Rerun with --debug for a traceback."
         typer.echo(
-            f"Error: unexpected failure: {exc}. Rerun with --debug for a traceback.",
-            err=True,
+            f"::error::{escape_workflow_data(message)}" if github_actions else message, err=True
         )
         raise typer.Exit(2) from exc
 
@@ -260,6 +285,43 @@ def run_check(candidate_path: Path, baseline_path: Path | None, gates_path: Path
         gates=load_quality_gates(gates_path),
         baseline=baseline,
     )
+
+
+def run_actions_check(
+    candidate_path: Path,
+    baseline_path: Path | None,
+    gates_path: Path,
+) -> tuple[GateReport, tuple[str, ...]]:
+    """Validate once, render workflow output, and append to the runner summary if present."""
+    candidate = _load_run_artifact(candidate_path)
+    baseline = _load_run_artifact(baseline_path) if baseline_path is not None else None
+    report = check_quality_gates(candidate, load_quality_gates(gates_path), baseline)
+    comparison = compare_runs(baseline, candidate) if baseline is not None else None
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary_path:
+        destination = Path(summary_path)
+        sources = [candidate_path, gates_path]
+        if baseline_path is not None:
+            sources.append(baseline_path)
+        try:
+            if any(
+                destination.resolve() == source.resolve()
+                or (destination.exists() and destination.samefile(source))
+                for source in sources
+            ):
+                raise UserInputError(
+                    "GitHub summary must not modify an input artifact or gate file"
+                )
+            summary = render_actions_summary(candidate, comparison, report)
+            if (destination.stat().st_size if destination.exists() else 0) + len(
+                summary.encode("utf-8")
+            ) > 1024 * 1024:
+                raise UserInputError("GitHub summary would exceed the 1 MiB step limit")
+            with destination.open("a", encoding="utf-8") as stream:
+                stream.write(summary)
+        except (OSError, UnicodeError) as exc:
+            raise UserInputError(f"Cannot write GitHub summary: {exc}") from exc
+    return report, render_actions_annotations(comparison, report)
 
 
 def run_report(
